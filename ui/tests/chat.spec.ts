@@ -74,7 +74,7 @@ const mockF4jxqMessages = [
 test.describe('Interactive Chat Service & Messenger', () => {
   test.beforeEach(async ({ page }) => {
     // Mock station config & services
-    await page.route('/api/v1/config', async (route) => {
+    await page.route('**/api/v1/config', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -82,7 +82,7 @@ test.describe('Interactive Chat Service & Messenger', () => {
       });
     });
 
-    await page.route('/api/v1/services', async (route) => {
+    await page.route('**/api/v1/services', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -92,7 +92,7 @@ test.describe('Interactive Chat Service & Messenger', () => {
       });
     });
 
-    await page.route('/api/v1/events', async (route) => {
+    await page.route('**/api/v1/events', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
@@ -101,7 +101,7 @@ test.describe('Interactive Chat Service & Messenger', () => {
     });
 
     // Mock chat endpoints
-    await page.route('/api/chat/v1/conversations', async (route) => {
+    await page.route('**/api/chat/v1/conversations', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -109,7 +109,7 @@ test.describe('Interactive Chat Service & Messenger', () => {
       });
     });
 
-    await page.route(/\/api\/v1\/chat\/messages\?peer=.*/, async (route) => {
+    await page.route(/\/api\/chat\/v1\/messages\?peer=.*/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -117,7 +117,7 @@ test.describe('Interactive Chat Service & Messenger', () => {
       });
     });
 
-    await page.route('/api/chat/v1/read', async (route) => {
+    await page.route('**/api/chat/v1/read', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -166,7 +166,7 @@ test.describe('Interactive Chat Service & Messenger', () => {
   test('dispatches a new chat message and updates thread', async ({ page }) => {
     let dispatchedPayload: any = null;
 
-    await page.route('/api/chat/v1/messages', async (route) => {
+    await page.route('**/api/chat/v1/messages', async (route) => {
       if (route.request().method() === 'POST') {
         dispatchedPayload = route.request().postDataJSON();
         await route.fulfill({
@@ -232,7 +232,7 @@ test.describe('Interactive Chat Service & Messenger', () => {
 
   test('+ New Chat modal opens, autocompletes suggestions, and creates conversation', async ({ page }) => {
     let createdPeerPayload: any = null;
-    await page.route('/api/chat/v1/conversations', async (route) => {
+    await page.route('**/api/chat/v1/conversations', async (route) => {
       if (route.request().method() === 'POST') {
         createdPeerPayload = route.request().postDataJSON();
         await route.fulfill({
@@ -293,7 +293,7 @@ test.describe('Interactive Chat Service & Messenger', () => {
 
   test('handles explicit service and SSID like dtn://f4jxq-9/chat without duplicate service or callsign stripping', async ({ page }) => {
     let createdPeerPayload: any = null;
-    await page.route('/api/chat/v1/conversations', async (route) => {
+    await page.route('**/api/chat/v1/conversations', async (route) => {
       if (route.request().method() === 'POST') {
         createdPeerPayload = route.request().postDataJSON();
         await route.fulfill({

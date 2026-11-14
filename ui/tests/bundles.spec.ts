@@ -56,7 +56,7 @@ const mockStationConfig = {
 test.describe('Bundle Storage Inspector & Multi-Format Viewer', () => {
   test.beforeEach(async ({ page }) => {
     // Mock station config
-    await page.route('/api/v1/config', async (route) => {
+    await page.route('**/api/v1/config', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -65,7 +65,7 @@ test.describe('Bundle Storage Inspector & Multi-Format Viewer', () => {
     });
 
     // Mock active services
-    await page.route('/api/v1/services', async (route) => {
+    await page.route('**/api/v1/services', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

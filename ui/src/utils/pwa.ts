@@ -33,6 +33,7 @@ export function registerServiceWorker() {
     navigator.serviceWorker
       .register('/sw.js')
       .then((reg) => {
+        if (!reg) return;
         // Detect if an updated service worker is already waiting
         if (reg.waiting) {
           waitingWorker = reg.waiting;

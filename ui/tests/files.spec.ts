@@ -86,7 +86,7 @@ const mockDetailMissingFile = {
 test.describe('Files Internal DTN Service (BUNDLE_LIST & Detail)', () => {
   test.beforeEach(async ({ page }) => {
     // Config route
-    await page.route('/api/v1/config', async (route) => {
+    await page.route('**/api/v1/config', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -95,7 +95,7 @@ test.describe('Files Internal DTN Service (BUNDLE_LIST & Detail)', () => {
     });
 
     // Services route
-    await page.route('/api/v1/services', async (route) => {
+    await page.route('**/api/v1/services', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -110,7 +110,7 @@ test.describe('Files Internal DTN Service (BUNDLE_LIST & Detail)', () => {
     });
 
     // Mock SSE events
-    await page.route('/api/v1/events', async (route) => {
+    await page.route('**/api/v1/events', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
@@ -119,7 +119,7 @@ test.describe('Files Internal DTN Service (BUNDLE_LIST & Detail)', () => {
     });
 
     // Files routes
-    await page.route(/\/api\/v1\/files(\/.*)?$/, async (route) => {
+    await page.route(/\/api\/files\/v1(\/.*)?$/, async (route) => {
       const url = route.request().url();
       const method = route.request().method();
 

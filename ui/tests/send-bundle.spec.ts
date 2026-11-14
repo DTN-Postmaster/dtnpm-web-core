@@ -19,7 +19,7 @@ test.describe('Send Bundle View', () => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 
     // Mock station config
-    await page.route('/api/v1/config', async (route) => {
+    await page.route('**/api/v1/config', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -60,7 +60,7 @@ test.describe('Send Bundle View', () => {
   test('submits a text bundle and displays the returned bundle ID', async ({ page }) => {
     // Intercept POST /api/v1/bundles
     let interceptedRequestBody: any = null;
-    await page.route('/api/v1/bundles', async (route) => {
+    await page.route('**/api/v1/bundles', async (route) => {
       if (route.request().method() === 'POST') {
         interceptedRequestBody = JSON.parse(route.request().postData() || '{}');
         await route.fulfill({
@@ -103,7 +103,7 @@ test.describe('Send Bundle View', () => {
 
   test('copies bundle ID to clipboard on button click', async ({ page }) => {
     // Mock successful submission
-    await page.route('/api/v1/bundles', async (route) => {
+    await page.route('**/api/v1/bundles', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -135,7 +135,7 @@ test.describe('Send Bundle View', () => {
   test('submits a binary file bundle and displays the returned bundle ID', async ({ page }) => {
     let requestWasMultipart = false;
 
-    await page.route('/api/v1/bundles', async (route) => {
+    await page.route('**/api/v1/bundles', async (route) => {
       if (route.request().method() === 'POST') {
         const contentType = route.request().headers()['content-type'] || '';
         requestWasMultipart = contentType.includes('multipart/form-data');
@@ -210,7 +210,7 @@ test.describe('Send Bundle View', () => {
   });
 
   test('displays transmission failed banner when API returns error', async ({ page }) => {
-    await page.route('/api/v1/bundles', async (route) => {
+    await page.route('**/api/v1/bundles', async (route) => {
       await route.fulfill({
         status: 400,
         contentType: 'application/json',

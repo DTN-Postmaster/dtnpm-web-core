@@ -163,8 +163,15 @@ export function App() {
       }
     };
 
+    // Immediate check on mount in case hash changed during initial render
+    handleHashChange();
+
     window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('popstate', handleHashChange);
+    };
   }, []);
 
   const navigateToTab = (tab: NavTabId) => {

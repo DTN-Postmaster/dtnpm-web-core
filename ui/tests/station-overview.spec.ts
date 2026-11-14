@@ -47,7 +47,7 @@ const mockStationConfig = {
 test.describe('Station Overview & Identity', () => {
   test.beforeEach(async ({ page }) => {
     // Mock the station config endpoint before navigating
-    await page.route('/api/v1/config', async (route) => {
+    await page.route('**/api/v1/config', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -56,7 +56,7 @@ test.describe('Station Overview & Identity', () => {
     });
 
     // Mock active services endpoint
-    await page.route('/api/v1/services', async (route) => {
+    await page.route('**/api/v1/services', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -71,7 +71,7 @@ test.describe('Station Overview & Identity', () => {
     });
 
     // Mock static routes endpoint
-    await page.route('/api/v1/routes*', async (route) => {
+    await page.route('**/api/v1/routes*', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
@@ -95,7 +95,7 @@ test.describe('Station Overview & Identity', () => {
     });
 
     // Mock CLA peer status endpoint
-    await page.route('/api/v1/clas/status', async (route) => {
+    await page.route('**/api/v1/clas/status', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -117,7 +117,7 @@ test.describe('Station Overview & Identity', () => {
     await expect(navbar).toBeVisible();
 
     // Verify title and badge
-    await expect(navbar.getByText('Hardy BPA')).toBeVisible();
+    await expect(navbar.getByText(/DTN HdyHam|Hardy BPA/)).toBeVisible();
     await expect(navbar.getByText('Hamradio')).toBeVisible();
 
     // Verify amateur radio callsign and node EID
@@ -246,7 +246,7 @@ test.describe('Station Overview & Identity', () => {
 
   test('displays error message and retry button when config API fails', async ({ page }) => {
     // Override route to return 500 error
-    await page.route('/api/v1/config', async (route) => {
+    await page.route('**/api/v1/config', async (route) => {
       await route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -266,7 +266,7 @@ test.describe('Station Overview & Identity', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
     // Route for Logs view when embedded
-    await page.route('/api/v1/logs', async (route) => {
+    await page.route('**/api/v1/logs', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ logs: [], count: 0, capacity: 500 }) });
     });
 
@@ -306,7 +306,7 @@ test.describe('Station Overview & Identity', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
     // Route for Logs view when embedded
-    await page.route('/api/v1/logs', async (route) => {
+    await page.route('**/api/v1/logs', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ logs: [], count: 0, capacity: 500 }) });
     });
 

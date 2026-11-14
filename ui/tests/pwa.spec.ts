@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('PWA & Field Mobile Ergonomics', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('/api/v1/config', async (route) => {
+    await page.route('**/api/v1/config', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -16,7 +16,7 @@ test.describe('PWA & Field Mobile Ergonomics', () => {
       });
     });
 
-    await page.route('/api/v1/services', async (route) => {
+    await page.route('**/api/v1/services', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -24,7 +24,7 @@ test.describe('PWA & Field Mobile Ergonomics', () => {
       });
     });
 
-    await page.route('/api/chat/v1/conversations', async (route) => {
+    await page.route('**/api/chat/v1/conversations', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -32,7 +32,7 @@ test.describe('PWA & Field Mobile Ergonomics', () => {
       });
     });
 
-    await page.route('/api/files/v1/unread', async (route) => {
+    await page.route('**/api/files/v1/unread', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -40,7 +40,7 @@ test.describe('PWA & Field Mobile Ergonomics', () => {
       });
     });
 
-    await page.route('/api/v1/events*', async (route) => {
+    await page.route('**/api/v1/events*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'text/event-stream',

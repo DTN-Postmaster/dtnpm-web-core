@@ -55,23 +55,23 @@ test.describe('BPSec Security & Authentication (RFC 9103 / RFC 9172)', () => {
       },
     ];
 
-    await page.route('/api/v1/config', async (route) => {
+    await page.route('**/api/v1/config', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockStationConfig) });
     });
 
-    await page.route('/api/v1/services', async (route) => {
+    await page.route('**/api/v1/services', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
-    await page.route('/api/v1/routes', async (route) => {
+    await page.route('**/api/v1/routes', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
-    await page.route('/api/v1/clas/status', async (route) => {
+    await page.route('**/api/v1/clas/status', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
-    await page.route('/api/v1/security/policy', async (route) => {
+    await page.route('**/api/v1/security/policy', async (route) => {
       if (route.request().method() === 'PUT') {
         const body = JSON.parse(route.request().postData() || '{}');
         mockPolicy = body.policy || mockPolicy;
@@ -81,7 +81,7 @@ test.describe('BPSec Security & Authentication (RFC 9103 / RFC 9172)', () => {
       }
     });
 
-    await page.route('/api/v1/security/keys', async (route) => {
+    await page.route('**/api/v1/security/keys', async (route) => {
       if (route.request().method() === 'POST') {
         const body = JSON.parse(route.request().postData() || '{}');
         const newKey = {
@@ -201,7 +201,7 @@ test.describe('BPSec Security & Authentication (RFC 9103 / RFC 9172)', () => {
       },
     ];
 
-    await page.route('/api/v1/events', async (route) => {
+    await page.route('**/api/v1/events', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
@@ -209,11 +209,11 @@ test.describe('BPSec Security & Authentication (RFC 9103 / RFC 9172)', () => {
       });
     });
 
-    await page.route('/api/chat/v1/read', async (route) => {
+    await page.route('**/api/chat/v1/read', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
     });
 
-    await page.route('/api/chat/v1/conversations', async (route) => {
+    await page.route('**/api/chat/v1/conversations', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -233,7 +233,7 @@ test.describe('BPSec Security & Authentication (RFC 9103 / RFC 9172)', () => {
       });
     });
 
-    await page.route(/\/api\/v1\/chat\/messages\?peer=.*/, async (route) => {
+    await page.route(/\/api\/chat\/v1\/messages\?peer=.*/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
