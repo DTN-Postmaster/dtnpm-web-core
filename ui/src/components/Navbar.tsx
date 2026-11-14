@@ -1,5 +1,6 @@
 import { h } from 'preact';
 import { NotificationPermissionState } from '../utils/notifications';
+import { AuthState } from './LoginModal';
 
 export type NavTabId = 'station' | 'chat' | 'files' | 'senml' | 'send';
 
@@ -21,6 +22,8 @@ interface NavbarProps {
   enabledModules?: string[];
   canInstall?: boolean;
   onInstall?: () => void;
+  authState?: AuthState | null;
+  onLogout?: () => void;
 }
 
 export function Navbar({
@@ -41,6 +44,8 @@ export function Navbar({
   enabledModules,
   canInstall = false,
   onInstall,
+  authState,
+  onLogout,
 }: NavbarProps) {
   const allTabs = [
     { id: 'station' as const, label: 'Station', shortLabel: 'Station', icon: '⚙️' },
@@ -201,6 +206,27 @@ export function Navbar({
             >
               <span aria-hidden="true" class="text-base">{soundEnabled ? '🔔' : '🔕'}</span>
             </button>
+
+            {/* User identity & role badge + optional Logout */}
+            {authState?.authenticated && authState.auth_mode !== 'none' && (
+              <div class="flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 text-xs font-medium text-slate-700 dark:text-slate-200">
+                <span aria-hidden="true">👤</span>
+                <span class="font-mono font-semibold">{authState.username || 'user'}</span>
+                <span class="hidden sm:inline px-1.5 py-0.5 text-[10px] rounded bg-emerald-100 dark:bg-emerald-900/70 text-emerald-700 dark:text-emerald-300 font-semibold">
+                  {authState.roles[0] || 'Viewer'}
+                </span>
+                {authState.auth_mode === 'local' && onLogout && (
+                  <button
+                    onClick={onLogout}
+                    title="Se déconnecter"
+                    aria-label="Se déconnecter"
+                    class="ml-1 pl-1.5 border-l border-slate-300 dark:border-slate-500 text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 cursor-pointer transition-colors"
+                  >
+                    🚪
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Theme toggle */}
             <button

@@ -196,7 +196,11 @@ impl TestServer {
         let addr = listener.local_addr()?;
         let app = self.router.clone();
         let handle = tokio::spawn(async move {
-            let _ = axum::serve(listener, app).await;
+            let _ = axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await;
         });
         Ok((addr, handle))
     }

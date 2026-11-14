@@ -18,13 +18,20 @@ anyhow = "1"
 axum = { version = "0.8", features = ["multipart", "macros"] }
 bytes = "1"
 futures-util = "0.3"
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
+ipnet = "2"
 rusqlite = { version = "0.40", features = ["array", "bundled", "time"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pki-types = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+subtle = "2"
 tempfile = "3"
 thiserror = "2"
 time = { version = "0.3", features = ["parsing", "formatting", "local-offset"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "net", "sync", "time"] }
+tokio-rustls = "0.26"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower = { version = "0.5", features = ["util"] }
@@ -32,4 +39,4 @@ tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
 tracing = "0.1"
 
 [dev-dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies"] }

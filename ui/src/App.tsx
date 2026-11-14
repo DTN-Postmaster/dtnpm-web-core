@@ -1,6 +1,7 @@
 import { h } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { Navbar, NavTabId } from './components/Navbar';
+import { LoginModal, AuthState } from './components/LoginModal';
 import { ConfigView, StationConfig, ActiveService, StationSubTab } from './components/ConfigView';
 import { SendBundleView } from './components/SendBundleView';
 import { ChatView, ChatMessage } from './components/ChatView';
@@ -98,6 +99,8 @@ export function App() {
 
   const [sseStatus, setSseStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
   const [incomingLog, setIncomingLog] = useState<LogRecord | null>(null);
+  const [authState, setAuthState] = useState<AuthState | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   // PWA & Network status states
   const [canInstall, setCanInstall] = useState(false);
@@ -292,6 +295,43 @@ export function App() {
     }
   };
 
+  const fetchAuthMe = async (): Promise<AuthState> => {
+    const fallback: AuthState = {
+      authenticated: true,
+      username: 'anonymous',
+      roles: ['Admin'],
+      auth_mode: 'none',
+      capabilities: {
+        can_manage_clas: true,
+        can_restart_server: true,
+        can_inject_bundles: true,
+      },
+    };
+    try {
+      const res = await fetch('/api/v1/auth/me');
+      if (res.ok) {
+        const data: AuthState = await res.json();
+        setAuthState(data);
+        setAuthChecked(true);
+        return data;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch /api/v1/auth/me', err);
+    }
+    setAuthState(fallback);
+    setAuthChecked(true);
+    return fallback;
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/v1/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.warn('Logout request failed', err);
+    }
+    await fetchAuthMe();
+  };
+
   const refreshAll = async () => {
     setLoading(true);
     const mods = await fetchCapabilities();
@@ -305,11 +345,22 @@ export function App() {
   };
 
   useEffect(() => {
-    refreshAll();
+    (async () => {
+      const auth = await fetchAuthMe();
+      if (auth.auth_mode !== 'local' || auth.authenticated) {
+        await refreshAll();
+      } else {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   // Setup Server-Sent Events (SSE) listener for reactive updates
   useEffect(() => {
+    if (!authChecked) return;
+    if (authState?.auth_mode === 'local' && !authState.authenticated) {
+      return;
+    }
     let es: EventSource | null = null;
     try {
       const sseUrl = activeTab === 'logs' ? '/api/v1/events?logs=true' : '/api/v1/events';
@@ -397,7 +448,7 @@ export function App() {
         es.close();
       }
     };
-  }, [activeTab]);
+  }, [activeTab, authChecked, authState?.auth_mode, authState?.authenticated]);
 
   // Collect known peer candidates from config safely
   const peerSuggestions: string[] = Array.from(
@@ -466,6 +517,28 @@ export function App() {
         </div>
       )}
 
+      {/* SSO / Reverse-Proxy Auth Missing Banner */}
+      {authChecked && authState?.auth_mode === 'proxy' && !authState.authenticated && (
+        <div class="bg-amber-600 text-white px-4 py-2 text-xs font-semibold text-center flex items-center justify-center space-x-2 shadow-sm">
+          <span>🔒</span>
+          <span>
+            Authentification SSO requise : aucun en-tête d&apos;identité de proxy approuvé détecté. Accès lecture seule / anonyme restreint.
+          </span>
+        </div>
+      )}
+
+      {/* Local Authentication Modal */}
+      {authChecked && authState?.auth_mode === 'local' && !authState.authenticated && (
+        <LoginModal
+          stationCallsign={config?.callsign || undefined}
+          onSuccess={(auth) => {
+            setAuthState(auth);
+            setError(null);
+            refreshAll();
+          }}
+        />
+      )}
+
       <Navbar
         activeTab={activeTab}
         onTabChange={navigateToTab}
@@ -484,6 +557,8 @@ export function App() {
         enabledModules={enabledModules}
         canInstall={canInstall}
         onInstall={handleInstallClick}
+        authState={authState}
+        onLogout={handleLogout}
       />
 
       {/* Main content with bottom padding for mobile navigation bar */}
@@ -504,6 +579,7 @@ export function App() {
             }}
             incomingLog={incomingLog}
             sseStatus={sseStatus}
+            canManageAdmin={authState?.capabilities?.can_manage_clas ?? true}
           />
         ) : activeTab === 'chat' ? (
           <ChatView

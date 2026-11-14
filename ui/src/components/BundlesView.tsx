@@ -26,6 +26,7 @@ export interface BundleDetail extends BundleSummary {
 
 interface BundlesViewProps {
   onRefresh?: () => void;
+  canManageAdmin?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -104,7 +105,7 @@ function getMimeBadge(mime: string) {
   return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-300';
 }
 
-export function BundlesView({ onRefresh }: BundlesViewProps) {
+export function BundlesView({ onRefresh, canManageAdmin = true }: BundlesViewProps) {
   const [bundles, setBundles] = useState<BundleSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -417,13 +418,15 @@ export function BundlesView({ onRefresh }: BundlesViewProps) {
                       </a>
 
                       {/* Delete button */}
-                      <button
-                        onClick={() => setBundleToDelete(b)}
-                        title="Delete bundle from storage"
-                        class="px-2.5 py-1 text-xs font-medium rounded border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/50 text-red-600 dark:text-red-400 transition-colors"
-                      >
-                        🗑️
-                      </button>
+                      {canManageAdmin && (
+                        <button
+                          onClick={() => setBundleToDelete(b)}
+                          title="Delete bundle from storage"
+                          class="px-2.5 py-1 text-xs font-medium rounded border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/50 text-red-600 dark:text-red-400 transition-colors"
+                        >
+                          🗑️
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -738,7 +741,7 @@ export function BundlesView({ onRefresh }: BundlesViewProps) {
             {/* Modal Footer Actions */}
             <div class="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
               <div>
-                {bundleDetail && (
+                {bundleDetail && canManageAdmin && (
                   <button
                     onClick={() => setBundleToDelete(bundleDetail)}
                     class="px-3 py-1.5 text-xs font-medium rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 border border-red-300 dark:border-red-900/60 transition-colors"

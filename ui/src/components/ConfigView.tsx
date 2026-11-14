@@ -74,6 +74,7 @@ interface ConfigViewProps {
   onSendReply?: (destination: string) => void;
   incomingLog?: LogRecord | null;
   sseStatus?: 'connected' | 'disconnected' | 'connecting';
+  canManageAdmin?: boolean;
 }
 
 export function ConfigView({
@@ -88,6 +89,7 @@ export function ConfigView({
   onSendReply,
   incomingLog,
   sseStatus,
+  canManageAdmin = true,
 }: ConfigViewProps) {
   const [internalSubTab, setInternalSubTab] = useState<StationSubTab>('radio');
   const currentSubTab = activeSubTab || internalSubTab;
@@ -795,15 +797,17 @@ export function ConfigView({
                                 </span>
 
                                 {/* Manual Connect Button */}
-                                <button
-                                  onClick={() => handleForceConnect(peerTarget)}
-                                  disabled={isConnecting}
-                                  title={`Force connection to peer ${peerTarget}`}
-                                  class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                                >
-                                  <span>{isConnecting ? '⏳' : '✋'}</span>
-                                  <span>{isConnecting ? 'Connecting...' : 'Connect'}</span>
-                                </button>
+                                {canManageAdmin && (
+                                  <button
+                                    onClick={() => handleForceConnect(peerTarget)}
+                                    disabled={isConnecting}
+                                    title={`Force connection to peer ${peerTarget}`}
+                                    class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                  >
+                                    <span>{isConnecting ? '⏳' : '✋'}</span>
+                                    <span>{isConnecting ? 'Connecting...' : 'Connect'}</span>
+                                  </button>
+                                )}
                               </div>
                             </div>
                             {peer.schedule && (
@@ -840,15 +844,17 @@ export function ConfigView({
             <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
               {routes.length} active
             </span>
-            <button
-              onClick={() => {
-                setShowAddRouteForm(!showAddRouteForm);
-                setRouteMessage(null);
-              }}
-              class="px-3 py-1 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1 cursor-pointer"
-            >
-              <span>{showAddRouteForm ? '✕ Cancel' : '+ Add Route'}</span>
-            </button>
+            {canManageAdmin && (
+              <button
+                onClick={() => {
+                  setShowAddRouteForm(!showAddRouteForm);
+                  setRouteMessage(null);
+                }}
+                class="px-3 py-1 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1 cursor-pointer"
+              >
+                <span>{showAddRouteForm ? '✕ Cancel' : '+ Add Route'}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -987,14 +993,16 @@ export function ConfigView({
                         via {route.cla}
                       </td>
                       <td class="py-2.5 px-3 text-right">
-                        <button
-                          onClick={() => handleDeleteRoute(route.pattern)}
-                          disabled={isDeleting}
-                          title={`Delete static route ${route.pattern}`}
-                          class="px-2 py-1 text-[11px] font-semibold rounded bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 transition cursor-pointer disabled:opacity-50"
-                        >
-                          {isDeleting ? 'Removing...' : '🗑️ Delete'}
-                        </button>
+                        {canManageAdmin && (
+                          <button
+                            onClick={() => handleDeleteRoute(route.pattern)}
+                            disabled={isDeleting}
+                            title={`Delete static route ${route.pattern}`}
+                            class="px-2 py-1 text-[11px] font-semibold rounded bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 transition cursor-pointer disabled:opacity-50"
+                          >
+                            {isDeleting ? 'Removing...' : '🗑️ Delete'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1025,15 +1033,17 @@ export function ConfigView({
             <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
               {keys.length} clé{keys.length > 1 ? 's' : ''}
             </span>
-            <button
-              onClick={() => {
-                setShowAddKeyModal(!showAddKeyModal);
-                setKeyMessage(null);
-              }}
-              class="px-3 py-1 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1 cursor-pointer"
-            >
-              <span>{showAddKeyModal ? '✕ Fermer' : '+ Ajouter une clé'}</span>
-            </button>
+            {canManageAdmin && (
+              <button
+                onClick={() => {
+                  setShowAddKeyModal(!showAddKeyModal);
+                  setKeyMessage(null);
+                }}
+                class="px-3 py-1 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1 cursor-pointer"
+              >
+                <span>{showAddKeyModal ? '✕ Fermer' : '+ Ajouter une clé'}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1068,8 +1078,9 @@ export function ConfigView({
           <div>
             <select
               value={securityPolicy}
+              disabled={!canManageAdmin}
               onChange={(e: any) => handleUpdatePolicy(e.target.value)}
-              class="w-full text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              class="w-full text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <option value="warn">Avertissement (Warn) — Recommandé</option>
               <option value="strict">Strict (Rejeter signatures invalides)</option>
@@ -1271,13 +1282,15 @@ export function ConfigView({
                             {k.created_at ? k.created_at.substring(0, 10) : '—'}
                           </td>
                           <td class="py-2.5 px-3 text-right">
-                            <button
-                              onClick={() => handleDeleteKey(k.id, k.pattern)}
-                              disabled={deletingKeyId === k.id}
-                              class="px-2 py-1 text-[11px] font-semibold rounded bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 transition cursor-pointer disabled:opacity-50"
-                            >
-                              {deletingKeyId === k.id ? '...' : '🗑️ Supprimer'}
-                            </button>
+                            {canManageAdmin && (
+                              <button
+                                onClick={() => handleDeleteKey(k.id, k.pattern)}
+                                disabled={deletingKeyId === k.id}
+                                class="px-2 py-1 text-[11px] font-semibold rounded bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 transition cursor-pointer disabled:opacity-50"
+                              >
+                                {deletingKeyId === k.id ? '...' : '🗑️ Supprimer'}
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1330,13 +1343,15 @@ export function ConfigView({
                             {k.created_at ? k.created_at.substring(0, 10) : '—'}
                           </td>
                           <td class="py-2.5 px-3 text-right">
-                            <button
-                              onClick={() => handleDeleteKey(k.id, k.pattern)}
-                              disabled={deletingKeyId === k.id}
-                              class="px-2 py-1 text-[11px] font-semibold rounded bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 transition cursor-pointer disabled:opacity-50"
-                            >
-                              {deletingKeyId === k.id ? '...' : '🗑️ Supprimer'}
-                            </button>
+                            {canManageAdmin && (
+                              <button
+                                onClick={() => handleDeleteKey(k.id, k.pattern)}
+                                disabled={deletingKeyId === k.id}
+                                class="px-2 py-1 text-[11px] font-semibold rounded bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 transition cursor-pointer disabled:opacity-50"
+                              >
+                                {deletingKeyId === k.id ? '...' : '🗑️ Supprimer'}
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1351,7 +1366,7 @@ export function ConfigView({
 
       {/* SUB-TAB 4: BUNDLES (STOCKAGE & PAQUETS) */}
       {currentSubTab === 'bundles' && (
-        <BundlesView key={bundlesKey} onRefresh={onRefresh} />
+        <BundlesView key={bundlesKey} onRefresh={onRefresh} canManageAdmin={canManageAdmin} />
       )}
 
       {/* SUB-TAB 5: LOGS (TRACES & DIAGNOSTIC) */}

@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use dtnpm_core::cla_manager::ClaManager;
 use dtnpm_core::config::HamConfig;
+use dtnpm_core::iam::PolicyEngine;
 use dtnpm_core::internal_storage::InternalStorage;
 use dtnpm_core::log_buffer::LogBuffer;
 use dtnpm_core::routing::RouteManager;
@@ -13,6 +14,7 @@ use dtnpm_core::{BpaClient, LocalBpaClient};
 use hardy_bpa::bpa::BpaRegistration;
 use rusqlite::Connection;
 
+use crate::auth::LoginRateLimiter;
 use crate::injector::WebBundleInjector;
 use crate::module::{ModuleDescriptor, WebModule};
 
@@ -29,6 +31,8 @@ pub struct ModuleContext {
     pub route_manager: Arc<RouteManager>,
     pub log_buffer: Arc<LogBuffer>,
     pub keystore: Arc<DirectionalKeyStore>,
+    pub policy_engine: Arc<PolicyEngine>,
+    pub login_rate_limiter: Arc<LoginRateLimiter>,
     pub capabilities: Arc<Vec<ModuleDescriptor>>,
 }
 
@@ -47,6 +51,30 @@ impl ModuleContext {
         keystore: Arc<DirectionalKeyStore>,
     ) -> Self {
         let db = internal_storage.connection();
+        let policy_engine = match PolicyEngine::load(config.auth.policy_path.as_deref()) {
+            Ok(engine) => Arc::new(engine),
+            Err(e) => {
+                tracing::error!(
+                    "Failed to load Rego policy ({}): {e}; failing back to default deny-only policy",
+                    config
+                        .auth
+                        .policy_path
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| "default_policy.rego".to_string())
+                );
+                Arc::new(
+                    PolicyEngine::from_rego_str(
+                        "fallback_deny.rego",
+                        "package dtn.ham.iam\ndefault allow = false\n",
+                    )
+                    .unwrap_or_else(|_| {
+                        unreachable!("built-in fallback Rego policy must always compile")
+                    }),
+                )
+            }
+        };
+        let login_rate_limiter = Arc::new(LoginRateLimiter::new());
         Self {
             config,
             bpa,
@@ -58,6 +86,8 @@ impl ModuleContext {
             route_manager,
             log_buffer,
             keystore,
+            policy_engine,
+            login_rate_limiter,
             capabilities: Arc::new(Vec::new()),
         }
     }

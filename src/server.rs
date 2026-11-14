@@ -94,6 +94,9 @@ pub fn create_router(ctx: ModuleContext, modules: Vec<Arc<dyn WebModule>>) -> Ro
     let index_file = static_dir.join("index.html");
 
     let system_routes = Router::new()
+        .route("/auth/me", get(routes::auth::get_me))
+        .route("/auth/login", post(routes::auth::login))
+        .route("/auth/logout", post(routes::auth::logout))
         .route("/capabilities", get(get_capabilities))
         .route("/config", get(routes::config::get_config))
         .route("/services", get(routes::services::get_services))
@@ -105,6 +108,7 @@ pub fn create_router(ctx: ModuleContext, modules: Vec<Arc<dyn WebModule>>) -> Ro
                 .post(routes::bundles::send_bundle)
                 .delete(routes::bundles::delete_bundle_handler),
         )
+        .route("/bundles/inject", post(routes::bundles::send_bundle))
         .route(
             "/bundles/payload",
             get(routes::bundles::get_bundle_payload_handler),
@@ -176,22 +180,115 @@ pub fn create_router(ctx: ModuleContext, modules: Vec<Arc<dyn WebModule>>) -> Ro
 
     router
         .fallback_service(serve_dir)
+        .layer(axum::middleware::from_fn_with_state(
+            ctx,
+            crate::auth::pbac_middleware,
+        ))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024)) // 64 MiB multipart/body limit
         .layer(cors)
 }
 
-/// Spawns the Axum web server in the background.
+fn load_tls_acceptor(
+    cert_path: &std::path::Path,
+    key_path: &std::path::Path,
+) -> anyhow::Result<tokio_rustls::TlsAcceptor> {
+    use rustls_pki_types::pem::PemObject;
+    use rustls_pki_types::{CertificateDer, PrivateKeyDer};
+
+    let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(cert_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read TLS cert {}: {e}", cert_path.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| anyhow::anyhow!("Invalid TLS cert PEM {}: {e}", cert_path.display()))?;
+    if certs.is_empty() {
+        anyhow::bail!("No certificates found in {}", cert_path.display());
+    }
+
+    let key = PrivateKeyDer::from_pem_file(key_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read TLS key {}: {e}", key_path.display()))?;
+
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let mut tls_config = rustls::ServerConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| anyhow::anyhow!("TLS protocol version config error: {e}"))?
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|e| anyhow::anyhow!("TLS certificate/key mismatch: {e}"))?;
+    tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+    Ok(tokio_rustls::TlsAcceptor::from(Arc::new(tls_config)))
+}
+
+/// Spawns the Axum web server (HTTP or HTTPS depending on `[tls]`) in the background.
 pub async fn start_web_server(
     ctx: ModuleContext,
     modules: Vec<Arc<dyn WebModule>>,
     listen_addr: SocketAddr,
 ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
+    let tls_cfg = ctx.config.tls.clone();
     let app = create_router(ctx, modules);
     let listener = tokio::net::TcpListener::bind(listen_addr).await?;
-    info!("Axum web server listening on http://{listen_addr}");
 
+    if tls_cfg.enabled {
+        let cert_path = tls_cfg.cert_path.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("[tls] enabled = true requires [tls].cert_path to be configured")
+        })?;
+        let key_path = tls_cfg.key_path.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("[tls] enabled = true requires [tls].key_path to be configured")
+        })?;
+        let acceptor = load_tls_acceptor(cert_path, key_path)?;
+        info!("Axum HTTPS (TLS) web server listening on https://{listen_addr}");
+
+        let handle = tokio::spawn(async move {
+            loop {
+                match listener.accept().await {
+                    Ok((stream, peer_addr)) => {
+                        let _ = stream.set_nodelay(true);
+                        let acceptor = acceptor.clone();
+                        let app_clone = app.clone();
+                        tokio::spawn(async move {
+                            let tls_stream = match acceptor.accept(stream).await {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    tracing::debug!("TLS handshake error from {peer_addr}: {e}");
+                                    return;
+                                }
+                            };
+                            let svc = tower::service_fn(
+                                move |mut req: axum::http::Request<hyper::body::Incoming>| {
+                                    let mut router = app_clone.clone();
+                                    req.extensions_mut()
+                                        .insert(axum::extract::ConnectInfo(peer_addr));
+                                    let req = req.map(axum::body::Body::new);
+                                    async move { tower::Service::call(&mut router, req).await }
+                                },
+                            );
+                            let io = hyper_util::rt::TokioIo::new(tls_stream);
+                            let builder = hyper_util::server::conn::auto::Builder::new(
+                                hyper_util::rt::TokioExecutor::new(),
+                            );
+                            let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
+                            if let Err(e) = builder.serve_connection(io, hyper_svc).await {
+                                tracing::debug!("HTTPS connection ended ({peer_addr}): {e}");
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("TLS accept error: {e}");
+                    }
+                }
+            }
+        });
+        return Ok(handle);
+    }
+
+    info!("Axum web server listening on http://{listen_addr}");
     let handle = tokio::spawn(async move {
-        if let Err(e) = axum::serve(listener, app).await {
+        if let Err(e) = axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        {
             tracing::error!("Axum web server error: {e}");
         }
     });
