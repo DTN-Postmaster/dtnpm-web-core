@@ -144,8 +144,9 @@ pub fn create_router(ctx: ModuleContext, modules: Vec<Arc<dyn WebModule>>) -> Ro
     }
     let serve_dir = ServeDir::new(&static_dir).fallback(ServeFile::new(index_file));
 
-    // Restrict CORS origins to localhost / loopback interfaces to prevent
-    // drive-by cross-origin localhost CSRF from third-party websites.
+    // Restrict CORS origins to exact localhost / loopback hosts to prevent
+    // drive-by cross-origin localhost CSRF from third-party websites or lookalike domains
+    // (e.g. `http://localhost.evil.com`).
     let cors = CorsLayer::new()
         .allow_methods([
             Method::GET,
@@ -157,13 +158,14 @@ pub fn create_router(ctx: ModuleContext, modules: Vec<Arc<dyn WebModule>>) -> Ro
         .allow_headers([header::CONTENT_TYPE, header::RANGE, header::AUTHORIZATION])
         .allow_origin(tower_http::cors::AllowOrigin::predicate(
             |origin: &HeaderValue, _| {
-                if let Ok(s) = origin.to_str() {
-                    s.starts_with("http://localhost")
-                        || s.starts_with("http://127.0.0.1")
-                        || s.starts_with("http://[::1]")
-                } else {
-                    false
-                }
+                origin
+                    .to_str()
+                    .ok()
+                    .and_then(|s| s.parse::<axum::http::Uri>().ok())
+                    .is_some_and(|uri| {
+                        matches!(uri.scheme_str(), Some("http" | "https"))
+                            && matches!(uri.host(), Some("localhost" | "127.0.0.1" | "[::1]"))
+                    })
             },
         ));
 
@@ -340,5 +342,50 @@ mod tests {
 
         let mod_resp = srv.get("/api/dummy/v1/ping").await;
         assert_eq!(mod_resp.status(), StatusCode::OK);
+        assert_eq!(
+            mod_resp.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        assert_eq!(mod_resp.headers().get("x-frame-options").unwrap(), "DENY");
+    }
+
+    #[tokio::test]
+    async fn test_cors_origin_rejects_lookalike_domains() {
+        use axum::body::Body;
+        use axum::http::Request;
+
+        let srv = crate::test_harness::TestServerBuilder::new()
+            .build()
+            .await
+            .unwrap();
+
+        let bad_req = Request::builder()
+            .method(Method::GET)
+            .uri("/api/capabilities")
+            .header(header::ORIGIN, "http://localhost.evil.com")
+            .body(Body::empty())
+            .unwrap();
+        let bad_resp = srv.oneshot(bad_req).await;
+        assert!(
+            bad_resp
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none()
+        );
+
+        let good_req = Request::builder()
+            .method(Method::GET)
+            .uri("/api/capabilities")
+            .header(header::ORIGIN, "http://localhost:5173")
+            .body(Body::empty())
+            .unwrap();
+        let good_resp = srv.oneshot(good_req).await;
+        assert_eq!(
+            good_resp
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .unwrap(),
+            "http://localhost:5173"
+        );
     }
 }

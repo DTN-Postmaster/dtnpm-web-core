@@ -30,7 +30,7 @@ subtle = "2"
 tempfile = "3"
 thiserror = "2"
 time = { version = "0.3", features = ["parsing", "formatting", "local-offset"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "net", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "net", "process", "sync", "time"] }
 tokio-rustls = "0.26"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["io"] }

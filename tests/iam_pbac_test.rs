@@ -60,9 +60,11 @@ async fn test_scenario_1_auth_mode_none_is_open() {
 
 #[tokio::test]
 async fn test_scenarios_2_3_proxy_operator_and_admin_roles() {
-    let mut cfg = HamConfig::default();
-    cfg.callsign = Some("F4KLO".to_string());
-    cfg.node_id = "dtn://f4klo/".to_string();
+    let mut cfg = HamConfig {
+        callsign: Some("F4KLO".to_string()),
+        node_id: "dtn://f4klo/".to_string(),
+        ..Default::default()
+    };
     cfg.auth.mode = AuthMode::Proxy;
     cfg.auth.admin_users = vec!["f4chief".to_string()];
     cfg.auth.admin_groups = vec!["dtn_admins".to_string(), "admins".to_string()];

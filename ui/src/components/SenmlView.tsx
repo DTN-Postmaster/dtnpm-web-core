@@ -77,6 +77,7 @@ export function SenmlView() {
   // Subscribe to real-time SSE telemetry stream
   useEffect(() => {
     let es: EventSource | null = null;
+    const flashTimers = new Set<ReturnType<typeof setTimeout>>();
     try {
       es = new EventSource('/api/senml/v1/stream');
 
@@ -87,8 +88,9 @@ export function SenmlView() {
           setCards((prevCards) =>
             prevCards.map((c) => {
               if (c.name === pt.id) {
-                const numericVal = typeof pt.value === 'number' ? pt.value : null;
-                const strVal = typeof pt.value !== 'number' ? String(pt.value) : String(pt.value);
+                const isNum = typeof pt.value === 'number' && Number.isFinite(pt.value);
+                const numericVal = isNum ? pt.value : null;
+                const strVal = isNum || pt.value === undefined || pt.value === null ? null : String(pt.value);
                 return {
                   ...c,
                   utc: pt.utc,
@@ -103,11 +105,13 @@ export function SenmlView() {
           );
 
           // Reset pulse flash after 800ms
-          setTimeout(() => {
+          const t = setTimeout(() => {
+            flashTimers.delete(t);
             setCards((prevCards) =>
               prevCards.map((c) => (c.name === pt.id ? { ...c, updatedFlash: false } : c))
             );
           }, 800);
+          flashTimers.add(t);
         } catch (err) {
           console.debug('Failed to parse telemetry SSE event', err);
         }
@@ -120,6 +124,8 @@ export function SenmlView() {
       if (es) {
         es.close();
       }
+      flashTimers.forEach((t) => clearTimeout(t));
+      flashTimers.clear();
     };
   }, []);
 

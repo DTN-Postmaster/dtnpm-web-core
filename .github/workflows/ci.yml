@@ -6,6 +6,9 @@ on:
     branches: [main, master]
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -14,13 +17,24 @@ jobs:
     name: Web Core Rust Tests & SBOM
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Hardy DTN workspace
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ricktaylor/hardy
+          path: hardy
+      - name: Checkout dtnpm-core
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: dtn-postmaster/dtnpm-core
+          path: dtn-postmaster/dtnpm-core
+      - name: Checkout dtnpm-web-core
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: dtn-postmaster/dtnpm-web-core
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: dtn-postmaster/dtnpm-web-core
       - name: Formatting check
@@ -31,15 +45,15 @@ jobs:
         run: cargo clippy --workspace --lib --bins -- -D warnings -D clippy::unwrap_used -D clippy::panic
       - name: Run cargo test
         working-directory: dtn-postmaster/dtnpm-web-core
-        run: cargo test
+        run: cargo test --all-features
       - name: Generate CycloneDX / SPDX SBOM (Syft)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           path: dtn-postmaster/dtnpm-web-core
           output-file: dtn-postmaster/dtnpm-web-core/sbom.json
           format: cyclonedx-json
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-dtnpm-web-core
           path: dtn-postmaster/dtnpm-web-core/sbom.json
@@ -48,20 +62,31 @@ jobs:
     name: Security & License Gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Hardy DTN workspace
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ricktaylor/hardy
+          path: hardy
+      - name: Checkout dtnpm-core
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: dtn-postmaster/dtnpm-core
+          path: dtn-postmaster/dtnpm-core
+      - name: Checkout dtnpm-web-core
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: dtn-postmaster/dtnpm-web-core
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: dtn-postmaster/dtnpm-web-core
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2
         with:
           tool: cargo-audit, cargo-deny, gitleaks
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
       - name: Install UI dependencies (for audit)
@@ -75,19 +100,30 @@ jobs:
     name: Code Coverage (LCOV)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Hardy DTN workspace
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ricktaylor/hardy
+          path: hardy
+      - name: Checkout dtnpm-core
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: dtn-postmaster/dtnpm-core
+          path: dtn-postmaster/dtnpm-core
+      - name: Checkout dtnpm-web-core
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: dtn-postmaster/dtnpm-web-core
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: dtn-postmaster/dtnpm-web-core
-      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: taiki-e/install-action@9299c56f1fb893650f348425bb02c3acf492ebd2 # cargo-llvm-cov
       - name: Generate LCOV coverage report
         working-directory: dtn-postmaster/dtnpm-web-core
         run: ./scripts/check-coverage.sh --lcov
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-dtnpm-web-core
           path: dtn-postmaster/dtnpm-web-core/lcov.info

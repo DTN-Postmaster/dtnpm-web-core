@@ -33,44 +33,65 @@ fn normalize_eid(s: &str) -> String {
     s.to_string()
 }
 
+const MAX_FFMPEG_INPUT_BYTES: usize = 16 * 1024 * 1024;
+const FFMPEG_TIMEOUT_SECS: u64 = 10;
+static FFMPEG_SEMAPHORE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+
 /// If the payload is a WebM audio stream, attempts to remux it to Ogg Opus using ffmpeg if available.
+/// Bounded by concurrency (2 permits), maximum input size (16 MiB), and a 10-second execution timeout.
 pub async fn maybe_remux_webm_to_ogg(payload: Vec<u8>) -> Vec<u8> {
     // Matroska / WebM signature: 0x1A 0x45 0xDF 0xA3
-    if payload.len() >= 4 && &payload[0..4] == b"\x1A\x45\xDF\xA3" {
-        tokio::task::spawn_blocking(move || {
-            use std::io::Write;
-            use std::process::{Command, Stdio};
+    if payload.len() >= 4
+        && &payload[0..4] == b"\x1A\x45\xDF\xA3"
+        && payload.len() <= MAX_FFMPEG_INPUT_BYTES
+    {
+        let Ok(_permit) = FFMPEG_SEMAPHORE.acquire().await else {
+            return payload;
+        };
 
-            let mut child = match Command::new("ffmpeg")
+        let remux_fut = async {
+            use std::process::Stdio;
+            use tokio::io::AsyncWriteExt;
+
+            let mut child = match tokio::process::Command::new("ffmpeg")
                 .args([
                     "-y", "-v", "error", "-i", "pipe:0", "-c:a", "copy", "-f", "ogg", "pipe:1",
                 ])
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null())
+                .kill_on_drop(true)
                 .spawn()
             {
                 Ok(c) => c,
-                Err(_) => return payload,
+                Err(_) => return None,
             };
 
             if let Some(mut stdin) = child.stdin.take() {
-                let payload_clone = payload.clone();
-                std::thread::spawn(move || {
-                    let _ = stdin.write_all(&payload_clone);
+                let bytes = payload.clone();
+                tokio::spawn(async move {
+                    let _ = stdin.write_all(&bytes).await;
+                    let _ = stdin.shutdown().await;
                 });
             }
 
-            if let Ok(output) = child.wait_with_output()
-                && output.status.success()
-                && !output.stdout.is_empty()
-            {
-                return output.stdout;
+            match child.wait_with_output().await {
+                Ok(output) if output.status.success() && !output.stdout.is_empty() => {
+                    Some(output.stdout)
+                }
+                _ => None,
             }
-            payload
-        })
+        };
+
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(FFMPEG_TIMEOUT_SECS),
+            remux_fut,
+        )
         .await
-        .unwrap_or_default()
+        {
+            Ok(Some(remuxed)) => remuxed,
+            _ => payload,
+        }
     } else {
         payload
     }

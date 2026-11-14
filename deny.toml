@@ -7,8 +7,9 @@ no-default-features = false
 
 [advisories]
 ignore = [
+    # VEX / Not Affected: libsqlite3-sys CVE-2026-119375 only affects SQLite's
+    # optional `session` extension, which dtnpm-web-core does not enable.
     "RUSTSEC-2026-0459",
-    "RUSTSEC-2024-0449",
 ]
 
 [licenses]

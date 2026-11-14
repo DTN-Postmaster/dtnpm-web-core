@@ -65,9 +65,15 @@ pub async fn get_me(
     Json(build_auth_me(&ctx, &user, &client_ip))
 }
 
-fn is_https_request(ctx: &ModuleContext, headers: &HeaderMap) -> bool {
+fn is_https_request(ctx: &ModuleContext, headers: &HeaderMap, client_ip: &str) -> bool {
     if ctx.config.tls.enabled {
         return true;
+    }
+    let Ok(peer_ip) = client_ip.parse::<std::net::IpAddr>() else {
+        return false;
+    };
+    if !crate::auth::is_ip_trusted(peer_ip, &ctx.config.auth.proxy.trusted_proxies) {
+        return false;
     }
     headers
         .get("x-forwarded-proto")
@@ -137,7 +143,7 @@ pub async fn login(
                 }
             };
 
-            let secure_attr = if is_https_request(&ctx, &headers) {
+            let secure_attr = if is_https_request(&ctx, &headers, &client_ip) {
                 "; Secure"
             } else {
                 ""
@@ -177,12 +183,20 @@ pub async fn login(
 }
 
 /// `POST /api/v1/auth/logout`: revokes the current SQLite session and clears the session cookie.
-pub async fn logout(State(ctx): State<ModuleContext>, headers: HeaderMap) -> Response {
+pub async fn logout(
+    State(ctx): State<ModuleContext>,
+    headers: HeaderMap,
+    client_ip_ext: Option<Extension<ClientIpAddress>>,
+) -> Response {
     if let Some(session_id) = extract_session_cookie(&headers) {
         let _ = ctx.internal_storage.delete_iam_session(&session_id);
     }
 
-    let secure_attr = if is_https_request(&ctx, &headers) {
+    let client_ip = match client_ip_ext {
+        Some(Extension(ClientIpAddress(ip))) => ip,
+        None => "127.0.0.1".to_string(),
+    };
+    let secure_attr = if is_https_request(&ctx, &headers, &client_ip) {
         "; Secure"
     } else {
         ""

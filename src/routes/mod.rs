@@ -24,13 +24,11 @@ fn prepare_payload_headers(
     is_download: bool,
 ) -> HeaderMap {
     // Determine safe disposition type.
-    // Dangerous web types like HTML must NEVER be rendered inline without sandbox.
-    // SVGs are rendered safely within <img> tags with strict sandbox CSP.
+    // Dangerous web types like HTML and SVG must NEVER be rendered inline; force attachment.
     let is_safe_inline_mime = mime_type.starts_with("image/png")
         || mime_type.starts_with("image/jpeg")
         || mime_type.starts_with("image/gif")
         || mime_type.starts_with("image/webp")
-        || mime_type.starts_with("image/svg+xml")
         || mime_type.starts_with("audio/")
         || mime_type.starts_with("video/")
         || mime_type.starts_with("text/plain")
@@ -42,13 +40,14 @@ fn prepare_payload_headers(
         "inline"
     };
 
-    // Sanitize filename against CRLF, quotes, backslashes for Content-Disposition header
+    // Sanitize filename to safe printable ASCII graphic characters for Content-Disposition header
     let safe_filename: String = filename
         .chars()
-        .filter(|c| !matches!(c, '"' | '\r' | '\n' | '\\'))
+        .filter(|c| c.is_ascii_graphic() && !matches!(c, '"' | '\\' | ';'))
+        .take(128)
         .collect();
     let safe_filename = if safe_filename.is_empty() {
-        "payload.bin".to_string()
+        "download.bin".to_string()
     } else {
         safe_filename
     };
@@ -62,7 +61,7 @@ fn prepare_payload_headers(
     headers.insert(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_str(&format!("{disposition_type}; filename=\"{safe_filename}\""))
-            .unwrap_or_else(|_| HeaderValue::from_static("inline")),
+            .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
     );
     headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     headers.insert(
@@ -305,4 +304,31 @@ pub async fn serve_payload_file_with_range(
         req_headers,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prepare_payload_headers;
+    use axum::http::header;
+
+    #[test]
+    fn test_prepare_payload_headers_forces_attachment_for_svg_and_sanitizes_filename() {
+        let headers = prepare_payload_headers(128, "image/svg+xml", "evil\";\r\n.svg", false);
+        let disp = headers
+            .get(header::CONTENT_DISPOSITION)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(disp.starts_with("attachment; filename=\""));
+        assert!(!disp.contains('\r'));
+        assert!(!disp.contains('\n'));
+        assert_eq!(disp, "attachment; filename=\"evil.svg\"");
+
+        let utf8_headers = prepare_payload_headers(64, "image/png", "éé", false);
+        assert_eq!(
+            utf8_headers
+                .get(header::CONTENT_DISPOSITION)
+                .and_then(|v| v.to_str().ok()),
+            Some("inline; filename=\"download.bin\"")
+        );
+    }
 }

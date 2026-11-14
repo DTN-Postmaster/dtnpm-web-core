@@ -41,7 +41,7 @@ export function normalizeChatTarget(input: string): string {
     const parts = stripped.split('/').filter((p) => p.trim().length > 0);
     if (parts.length === 0) {
       return 'dtn://none/chat';
-    } else if (parts.len === 1 || parts.length === 1) {
+    } else if (parts.length === 1) {
       return `dtn://${parts[0].toLowerCase()}/chat`;
     } else {
       const node = parts[0].toLowerCase();
@@ -184,7 +184,12 @@ export function ChatView({
     fetchConversations(selectedPeer || undefined);
 
     // If belongs to currently opened conversation, append dynamically
-    if (selectedPeer && (msg.conversation_peer === selectedPeer || msg.sender_eid.includes(selectedPeer))) {
+    const normSelected = selectedPeer ? normalizeChatTarget(selectedPeer) : '';
+    if (
+      selectedPeer &&
+      (normalizeChatTarget(msg.conversation_peer || '') === normSelected ||
+        normalizeChatTarget(msg.sender_eid) === normSelected)
+    ) {
       setMessages((prev) => {
         // avoid duplicate if already present
         if (prev.some((m) => m.id === msg.id)) return prev;
@@ -197,7 +202,7 @@ export function ChatView({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ peer: selectedPeer }),
-        });
+        }).catch(() => {});
       }
     }
   }, [lastReceivedChatMessage]);

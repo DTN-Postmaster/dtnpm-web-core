@@ -38,6 +38,8 @@ struct AttemptRecord {
     blocked_until: Option<Instant>,
 }
 
+const MAX_RATE_LIMIT_ENTRIES: usize = 4096;
+
 /// Per-IP login failure rate limiter with exponential backoff.
 pub struct LoginRateLimiter {
     attempts: Mutex<HashMap<String, AttemptRecord>>,
@@ -58,16 +60,20 @@ impl LoginRateLimiter {
         }
     }
 
+    fn prune_expired(guard: &mut HashMap<String, AttemptRecord>, now: Instant) {
+        guard.retain(|_, v| {
+            v.blocked_until.is_some_and(|b| b > now)
+                || now.duration_since(v.window_start) < Duration::from_secs(300)
+        });
+    }
+
     /// Returns `Some(retry_after_secs)` if the client IP is temporarily blocked.
     pub fn check_blocked(&self, ip: &str) -> Option<u64> {
         let now = Instant::now();
         let Ok(mut guard) = self.attempts.lock() else {
             return None;
         };
-        guard.retain(|_, v| {
-            v.blocked_until.is_some_and(|b| b > now)
-                || now.duration_since(v.window_start) < Duration::from_secs(300)
-        });
+        Self::prune_expired(&mut guard, now);
         if let Some(rec) = guard.get(ip)
             && let Some(until) = rec.blocked_until
             && until > now
@@ -83,6 +89,20 @@ impl LoginRateLimiter {
         let Ok(mut guard) = self.attempts.lock() else {
             return;
         };
+        if guard.len() >= MAX_RATE_LIMIT_ENTRIES && !guard.contains_key(ip) {
+            Self::prune_expired(&mut guard, now);
+            while guard.len() >= MAX_RATE_LIMIT_ENTRIES {
+                let oldest_key = guard
+                    .iter()
+                    .min_by_key(|(_, rec)| rec.window_start)
+                    .map(|(k, _)| k.clone());
+                if let Some(k) = oldest_key {
+                    guard.remove(&k);
+                } else {
+                    break;
+                }
+            }
+        }
         let entry = guard.entry(ip.to_string()).or_insert(AttemptRecord {
             failures: 0,
             window_start: now,
@@ -109,7 +129,7 @@ impl LoginRateLimiter {
     }
 }
 
-fn canonicalize_ip(ip: IpAddr) -> IpAddr {
+pub(crate) fn canonicalize_ip(ip: IpAddr) -> IpAddr {
     match ip {
         IpAddr::V6(v6) => v6
             .to_ipv4_mapped()
@@ -119,7 +139,7 @@ fn canonicalize_ip(ip: IpAddr) -> IpAddr {
     }
 }
 
-fn is_ip_trusted(ip: IpAddr, trusted_proxies: &[String]) -> bool {
+pub(crate) fn is_ip_trusted(ip: IpAddr, trusted_proxies: &[String]) -> bool {
     let ip = canonicalize_ip(ip);
     for entry in trusted_proxies {
         let trimmed = entry.trim();
@@ -228,7 +248,75 @@ fn resolve_local_user(headers: &HeaderMap, ctx: &ModuleContext) -> UserInput {
     UserInput::default()
 }
 
-/// Axum middleware enforcing authentication and OPA Rego PBAC on every incoming HTTP request.
+fn extract_host_only(host_hdr: &str) -> Option<String> {
+    let trimmed = host_hdr.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    format!("http://{trimmed}")
+        .parse::<axum::http::Uri>()
+        .ok()
+        .and_then(|uri| uri.host().map(str::to_ascii_lowercase))
+}
+
+fn validate_cookie_csrf(
+    headers: &HeaderMap,
+    method: &axum::http::Method,
+) -> Result<(), &'static str> {
+    if !matches!(
+        *method,
+        axum::http::Method::POST
+            | axum::http::Method::PUT
+            | axum::http::Method::DELETE
+            | axum::http::Method::PATCH
+    ) {
+        return Ok(());
+    }
+
+    if let Some(sfs) = headers.get("sec-fetch-site").and_then(|v| v.to_str().ok())
+        && sfs.trim().eq_ignore_ascii_case("cross-site")
+    {
+        return Err("Cross-site state-changing request rejected");
+    }
+
+    if let Some(origin_val) = headers.get(header::ORIGIN) {
+        let origin_str = origin_val
+            .to_str()
+            .map_err(|_| "Malformed Origin header on state-changing request")?;
+        let origin_host = origin_str
+            .trim()
+            .parse::<axum::http::Uri>()
+            .ok()
+            .and_then(|u| u.host().map(str::to_ascii_lowercase))
+            .ok_or("Invalid Origin header on state-changing request")?;
+        let host_only = headers
+            .get(header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .and_then(extract_host_only)
+            .ok_or("Missing or invalid Host header for Origin validation")?;
+        if origin_host != host_only {
+            return Err("CSRF check failed: Origin host does not match Host");
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_security_headers(mut resp: Response) -> Response {
+    let headers = resp.headers_mut();
+    headers
+        .entry(header::X_CONTENT_TYPE_OPTIONS)
+        .or_insert_with(|| header::HeaderValue::from_static("nosniff"));
+    headers
+        .entry(header::X_FRAME_OPTIONS)
+        .or_insert_with(|| header::HeaderValue::from_static("DENY"));
+    headers
+        .entry(header::REFERRER_POLICY)
+        .or_insert_with(|| header::HeaderValue::from_static("no-referrer"));
+    resp
+}
+
+/// Axum middleware enforcing authentication, CSRF checks, and OPA Rego PBAC on HTTP requests.
 pub async fn pbac_middleware(
     State(ctx): State<ModuleContext>,
     mut req: Request,
@@ -264,11 +352,13 @@ pub async fn pbac_middleware(
                         path = %path,
                         "Rejected proxy identity header from untrusted peer IP"
                     );
-                    return (
-                        StatusCode::FORBIDDEN,
-                        Json(json!({ "error": "Untrusted proxy identity header rejected" })),
-                    )
-                        .into_response();
+                    return apply_security_headers(
+                        (
+                            StatusCode::FORBIDDEN,
+                            Json(json!({ "error": "Untrusted proxy identity header rejected" })),
+                        )
+                            .into_response(),
+                    );
                 }
                 UserInput::default()
             } else {
@@ -326,6 +416,21 @@ pub async fn pbac_middleware(
         AuthMode::Local => resolve_local_user(req.headers(), &ctx),
     };
 
+    if user.authenticated
+        && user.auth_method == "session"
+        && let Err(reason) = validate_cookie_csrf(req.headers(), req.method())
+    {
+        warn!(
+            peer_ip = %client_ip_str,
+            path = %path,
+            reason = %reason,
+            "Rejected potentially forged cookie-authenticated request"
+        );
+        return apply_security_headers(
+            (StatusCode::FORBIDDEN, Json(json!({ "error": reason }))).into_response(),
+        );
+    }
+
     let rego_input = RegoInput {
         user: user.clone(),
         request: RequestInput {
@@ -344,21 +449,65 @@ pub async fn pbac_middleware(
     let allowed = ctx.policy_engine.allow(&rego_input);
     if !allowed {
         if !user.authenticated {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Authentication required" })),
-            )
-                .into_response();
+            return apply_security_headers(
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({ "error": "Authentication required" })),
+                )
+                    .into_response(),
+            );
         }
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({ "error": "Forbidden by security policy" })),
-        )
-            .into_response();
+        return apply_security_headers(
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Forbidden by security policy" })),
+            )
+                .into_response(),
+        );
     }
 
     req.extensions_mut().insert(AuthenticatedUser(user));
     req.extensions_mut().insert(ClientIpAddress(client_ip_str));
 
-    next.run(req).await
+    apply_security_headers(next.run(req).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LoginRateLimiter, MAX_RATE_LIMIT_ENTRIES, validate_cookie_csrf};
+    use axum::http::{HeaderMap, HeaderValue, Method, header};
+
+    #[test]
+    fn test_validate_cookie_csrf_blocks_cross_site_and_mismatched_origin() {
+        let mut cross_site = HeaderMap::new();
+        cross_site.insert("sec-fetch-site", HeaderValue::from_static("cross-site"));
+        assert!(validate_cookie_csrf(&cross_site, &Method::POST).is_err());
+        assert!(validate_cookie_csrf(&cross_site, &Method::GET).is_ok());
+
+        let mut mismatch = HeaderMap::new();
+        mismatch.insert(header::HOST, HeaderValue::from_static("localhost:3000"));
+        mismatch.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://evil.example"),
+        );
+        assert!(validate_cookie_csrf(&mismatch, &Method::DELETE).is_err());
+
+        let mut same_origin = HeaderMap::new();
+        same_origin.insert(header::HOST, HeaderValue::from_static("localhost:3000"));
+        same_origin.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("http://localhost:3000"),
+        );
+        assert!(validate_cookie_csrf(&same_origin, &Method::POST).is_ok());
+    }
+
+    #[test]
+    fn test_login_rate_limiter_respects_max_capacity() {
+        let limiter = LoginRateLimiter::default();
+        for i in 0..(MAX_RATE_LIMIT_ENTRIES + 50) {
+            limiter.record_failure(&format!("ip-{i}"));
+        }
+        let guard = limiter.attempts.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(guard.len() <= MAX_RATE_LIMIT_ENTRIES);
+    }
 }
