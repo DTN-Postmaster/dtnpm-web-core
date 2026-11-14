@@ -21,6 +21,13 @@ Requires sibling checkouts of `../dtnpm-core` and `../../hardy/*` as referenced 
 cargo test
 ```
 
+## Security & Compliance
+
+- **Cyber Resilience Act (CRA)**: Secure default sessions (`HttpOnly`, `SameSite=Lax`), VEX audit documentation (`RUSTSEC-2026-0459`), and SHA-pinned CI actions.
+- **OWASP Web & API Protection**: Exact URI host CORS enforcement, CSRF origin/`Sec-Fetch-Site` checks, bounded rate limiting (4,096 entries), safe content delivery (`attachment` for SVG, RFC 5987 headers), and bounded `ffmpeg` remuxing (2 permits, 10s timeout, 16 MiB output cap, `kill_on_drop`).
+- **Rust Quality Standards**: Zero-unwrap and zero-panic rule in production (`-D clippy::unwrap_used -D clippy::panic`).
+- **Documentation**: See [`AGENTS.md`](AGENTS.md), [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md), and Architectural Decision Records in [`adr/`](adr/).
+
 ## License
 
 Dual-licensed under the Apache License, Version 2.0 or the MIT License. See [LICENSE.md](LICENSE.md).
