@@ -1,0 +1,7 @@
+[advisories]
+ignore = [
+    # libsqlite3-sys CVE-2026-119375 via upstream sqlx-sqlite
+    "RUSTSEC-2026-0459",
+    # unsafe-libyaml unmaintained via upstream serde_yaml (config crate)
+    "RUSTSEC-2024-0449",
+]

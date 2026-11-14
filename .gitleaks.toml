@@ -1,0 +1,33 @@
+title = "Gitleaks configuration for dtnpm-web-core"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlisted test fixtures, lockfiles, and build outputs"
+paths = [
+    '''Cargo\.lock''',
+    '''sbom\.json''',
+    '''target/.*''',
+    '''tests/.*''',
+    '''examples/.*''',
+    '''ui/dist/.*''',
+    '''ui/node_modules/.*''',
+    '''ui/pnpm-lock\.yaml''',
+    '''playwright-report/.*''',
+    '''test-results/.*''',
+]
+regexes = [
+    '''hdy_sec_9f823a\.\.\.''',
+]
+stopwords = [
+    "test_",
+    "example",
+    "dummy",
+    "mock",
+    "N0CALL",
+    "F4JXQ",
+    "STATA",
+    "STATB",
+    "changeme",
+]

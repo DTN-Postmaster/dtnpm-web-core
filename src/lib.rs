@@ -11,5 +11,7 @@ pub mod test_harness;
 pub use context::ModuleContext;
 pub use injector::WebBundleInjector;
 pub use module::{ModuleDescriptor, WebModule};
-pub use server::{AppState, CapabilitiesResponse, create_router, register_modules, start_web_server};
+pub use server::{
+    AppState, CapabilitiesResponse, create_router, register_modules, start_web_server,
+};
 pub use test_harness::{TestServer, TestServerBuilder};

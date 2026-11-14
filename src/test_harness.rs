@@ -39,6 +39,7 @@ impl Default for TestServerBuilder {
 impl TestServerBuilder {
     /// Creates a new builder configured for `dtn://test/` with in-memory storage.
     #[must_use]
+    #[allow(clippy::field_reassign_with_default)]
     pub fn new() -> Self {
         let mut config = HamConfig::default();
         config.node_id = "dtn://test/".to_string();
@@ -171,7 +172,7 @@ impl TestServer {
                 .method(Method::GET)
                 .uri(uri)
                 .body(Body::empty())
-                .unwrap(),
+                .expect("valid GET test request"),
         )
         .await
     }
@@ -184,7 +185,7 @@ impl TestServer {
                 .uri(uri)
                 .header(axum::http::header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_string()))
-                .unwrap(),
+                .expect("valid POST test request"),
         )
         .await
     }

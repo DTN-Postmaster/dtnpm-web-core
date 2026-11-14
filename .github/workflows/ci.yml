@@ -10,8 +10,69 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Web Core Rust Tests
+  build-test-lint:
+    name: Web Core Rust Tests & SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: dtn-postmaster/dtnpm-web-core
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: dtn-postmaster/dtnpm-web-core
+      - name: Formatting check
+        working-directory: dtn-postmaster/dtnpm-web-core
+        run: cargo fmt --all -- --check
+      - name: Strict Clippy check (production targets)
+        working-directory: dtn-postmaster/dtnpm-web-core
+        run: cargo clippy --workspace --lib --bins -- -D warnings -D clippy::unwrap_used -D clippy::panic
+      - name: Run cargo test
+        working-directory: dtn-postmaster/dtnpm-web-core
+        run: cargo test
+      - name: Generate CycloneDX / SPDX SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          path: dtn-postmaster/dtnpm-web-core
+          output-file: dtn-postmaster/dtnpm-web-core/sbom.json
+          format: cyclonedx-json
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-dtnpm-web-core
+          path: dtn-postmaster/dtnpm-web-core/sbom.json
+
+  security-audit:
+    name: Security & License Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: dtn-postmaster/dtnpm-web-core
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: dtn-postmaster/dtnpm-web-core
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit, cargo-deny, gitleaks
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install UI dependencies (for audit)
+        working-directory: dtn-postmaster/dtnpm-web-core/ui
+        run: pnpm install --frozen-lockfile
+      - name: Run strict security checks
+        working-directory: dtn-postmaster/dtnpm-web-core
+        run: ./scripts/check-security.sh --strict
+
+  code-coverage:
+    name: Code Coverage (LCOV)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +82,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: dtn-postmaster/dtnpm-web-core
-      - name: Run cargo test
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate LCOV coverage report
         working-directory: dtn-postmaster/dtnpm-web-core
-        run: cargo test
+        run: ./scripts/check-coverage.sh --lcov
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-dtnpm-web-core
+          path: dtn-postmaster/dtnpm-web-core/lcov.info

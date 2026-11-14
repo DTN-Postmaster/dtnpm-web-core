@@ -143,13 +143,15 @@ async fn build_and_inject_bundle(
             "Signing bundle with BPSec BIB key pattern '{}'",
             key.pattern
         );
-        dtnpm_core::security::sign_bundle_with_key(&bundle, &binbundle, &key, None).map_err(|e| {
-            tracing::error!("BPSec BIB signing failed for destination '{dest_str}': {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to sign bundle with BPSec key: {e}"),
-            )
-        })?
+        dtnpm_core::security::sign_bundle_with_key(&bundle, &binbundle, &key, None).map_err(
+            |e| {
+                tracing::error!("BPSec BIB signing failed for destination '{dest_str}': {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to sign bundle with BPSec key: {e}"),
+                )
+            },
+        )?
     } else {
         binbundle.into_vec()
     };
@@ -354,7 +356,9 @@ pub async fn get_bundle_payload_handler(
     let db_path = state.config.storage.effective_db_path();
     let payload_dir = state.config.storage.effective_payload_dir();
 
-    match dtnpm_core::bundle_inspector::get_bundle_payload_location(&db_path, &payload_dir, &id).await {
+    match dtnpm_core::bundle_inspector::get_bundle_payload_location(&db_path, &payload_dir, &id)
+        .await
+    {
         Ok(Some(loc)) => {
             super::serve_payload_file_slice_with_range(
                 &loc.path,
@@ -396,7 +400,9 @@ pub async fn delete_bundle_handler(
     let db_path = state.config.storage.effective_db_path();
     let payload_dir = state.config.storage.effective_payload_dir();
 
-    match dtnpm_core::bundle_inspector::delete_bundle_from_storage(&db_path, &payload_dir, &id).await {
+    match dtnpm_core::bundle_inspector::delete_bundle_from_storage(&db_path, &payload_dir, &id)
+        .await
+    {
         Ok(true) => {
             state.service_tracker.broadcast_bundles_update();
             (
