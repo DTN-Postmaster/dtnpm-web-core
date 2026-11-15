@@ -15,6 +15,37 @@ export interface BundleSummary {
   auth_status?: string;
 }
 
+export interface HopCountInfo {
+  count: number;
+  limit: number;
+}
+
+export interface ReplicationControlInfo {
+  quota: number;
+  mode?: number;
+  phase?: number;
+  generation?: number;
+}
+
+export interface TrebHopEntryInfo {
+  node_eid: string;
+  arrival_time_ms?: number;
+  departure_time_ms?: number;
+  cla_info?: string;
+}
+
+export interface RoutingExtensionsSummary {
+  hop_count?: HopCountInfo | null;
+  spray_permit?: number | null;
+  aprs_path_formatted?: string | null;
+  mesh_routing?: {
+    replication_control?: ReplicationControlInfo | null;
+  } | null;
+  treb?: {
+    hops: TrebHopEntryInfo[];
+  } | null;
+}
+
 export interface BundleDetail extends BundleSummary {
   mime_type: string;
   is_binary: boolean;
@@ -22,6 +53,7 @@ export interface BundleDetail extends BundleSummary {
   storage_name: string | null;
   payload_preview: string | null;
   hex_dump: string | null;
+  routing_extensions?: RoutingExtensionsSummary | null;
 }
 
 interface BundlesViewProps {
@@ -544,6 +576,60 @@ export function BundlesView({ onRefresh, canManageAdmin = true }: BundlesViewPro
                       </div>
                     )}
                   </div>
+
+                  {/* Routing Extension Blocks (Hop Count, APRS, Spray-and-Wait, TREB) */}
+                  {bundleDetail.routing_extensions && (
+                    <div class="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+                      <div class="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
+                        🛰️ Routing Extension Blocks
+                      </div>
+                      {bundleDetail.routing_extensions.hop_count && (
+                        <div class="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span class="text-slate-500 dark:text-slate-400 font-medium">Hop Count (Type 10):</span>
+                          <span class="font-mono text-slate-900 dark:text-slate-200">
+                            {bundleDetail.routing_extensions.hop_count.count} / {bundleDetail.routing_extensions.hop_count.limit}
+                          </span>
+                        </div>
+                      )}
+                      {bundleDetail.routing_extensions.spray_permit != null && (
+                        <div class="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span class="text-slate-500 dark:text-slate-400 font-medium">Spray Permit (Type 194):</span>
+                          <span class="font-mono text-slate-900 dark:text-slate-200">
+                            {bundleDetail.routing_extensions.spray_permit}
+                          </span>
+                        </div>
+                      )}
+                      {bundleDetail.routing_extensions.mesh_routing?.replication_control && (
+                        <div class="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span class="text-slate-500 dark:text-slate-400 font-medium">Spray-and-Wait Quota (Type 200):</span>
+                          <span class="font-mono text-slate-900 dark:text-slate-200">
+                            quota={bundleDetail.routing_extensions.mesh_routing.replication_control.quota}
+                            {bundleDetail.routing_extensions.mesh_routing.replication_control.mode != null
+                              ? ` (mode=${bundleDetail.routing_extensions.mesh_routing.replication_control.mode})`
+                              : ''}
+                          </span>
+                        </div>
+                      )}
+                      {bundleDetail.routing_extensions.aprs_path_formatted && (
+                        <div class="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span class="text-slate-500 dark:text-slate-400 font-medium">APRS Future Path (Type 200):</span>
+                          <span class="font-mono text-emerald-700 dark:text-emerald-300">
+                            {bundleDetail.routing_extensions.aprs_path_formatted}
+                          </span>
+                        </div>
+                      )}
+                      {bundleDetail.routing_extensions.treb && bundleDetail.routing_extensions.treb.hops.length > 0 && (
+                        <div class="pt-1">
+                          <div class="text-slate-500 dark:text-slate-400 font-medium mb-1">
+                            TREB Past Path (Type 201, {bundleDetail.routing_extensions.treb.hops.length} hops):
+                          </div>
+                          <div class="font-mono text-[11px] text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-950 p-2 rounded border border-slate-200 dark:border-slate-800">
+                            {bundleDetail.routing_extensions.treb.hops.map((h) => h.node_eid).join(' -> ')}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Multi-Format Payload Viewer */}
                   <div>

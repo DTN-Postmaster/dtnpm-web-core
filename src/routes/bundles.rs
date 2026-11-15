@@ -20,6 +20,12 @@ pub struct SendBundleJsonRequest {
     pub source: Option<String>,
     pub lifetime: Option<u64>,
     pub payload: String,
+    #[serde(default)]
+    pub hop_limit: Option<u8>,
+    #[serde(default)]
+    pub aprs_path: Option<String>,
+    #[serde(default)]
+    pub spray_quota: Option<u32>,
 }
 
 fn normalize_eid(s: &str) -> String {
@@ -97,13 +103,29 @@ pub async fn maybe_remux_webm_to_ogg(payload: Vec<u8>) -> Vec<u8> {
     }
 }
 
+struct BundleInjectionParams<'a> {
+    destination_str: &'a str,
+    source_str: Option<&'a str>,
+    lifetime_secs: Option<u64>,
+    hop_limit: Option<u8>,
+    aprs_path: Option<&'a str>,
+    spray_quota: Option<u32>,
+    payload_bytes: Vec<u8>,
+}
+
 async fn build_and_inject_bundle(
     state: &AppState,
-    destination_str: &str,
-    source_str: Option<&str>,
-    lifetime_secs: Option<u64>,
-    payload_bytes: Vec<u8>,
+    params: BundleInjectionParams<'_>,
 ) -> Result<serde_json::Value, (StatusCode, String)> {
+    let BundleInjectionParams {
+        destination_str,
+        source_str,
+        lifetime_secs,
+        hop_limit,
+        aprs_path,
+        spray_quota,
+        payload_bytes,
+    } = params;
     let payload_bytes = maybe_remux_webm_to_ogg(payload_bytes).await;
     if destination_str.trim().is_empty() {
         return Err((
@@ -147,16 +169,22 @@ async fn build_and_inject_bundle(
     let lifetime = std::time::Duration::from_secs(lifetime_secs.unwrap_or(3600));
     let payload_len = payload_bytes.len();
 
-    let (bundle, binbundle) = Builder::new(source_eid.clone(), destination_eid.clone())
+    let builder = Builder::new(source_eid.clone(), destination_eid.clone())
         .with_payload(payload_bytes.into())
-        .with_lifetime(lifetime)
-        .build(CreationTimestamp::now())
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to build bundle: {e}"),
-            )
-        })?;
+        .with_lifetime(lifetime);
+    let builder = dtnpm_core::mesh_blocks::apply_routing_extensions(
+        builder,
+        hop_limit,
+        aprs_path,
+        spray_quota,
+    )
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let (bundle, binbundle) = builder.build(CreationTimestamp::now()).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to build bundle: {e}"),
+        )
+    })?;
 
     let dest_str = destination_eid.to_string();
     let binbundle_vec = if let Some(key) = state.keystore.find_outbound_key(&dest_str) {
@@ -238,6 +266,9 @@ pub async fn send_bundle(State(state): State<AppState>, request: Request) -> imp
         let mut destination: Option<String> = None;
         let mut source: Option<String> = None;
         let mut lifetime: Option<u64> = None;
+        let mut hop_limit: Option<u8> = None;
+        let mut aprs_path: Option<String> = None;
+        let mut spray_quota: Option<u32> = None;
         let mut payload_bytes: Option<Vec<u8>> = None;
 
         while let Ok(Some(field)) = multipart.next_field().await {
@@ -258,6 +289,30 @@ pub async fn send_bundle(State(state): State<AppState>, request: Request) -> imp
                         lifetime = text.trim().parse::<u64>().ok();
                     }
                 }
+                "hop_limit" => {
+                    if let Ok(text) = field.text().await {
+                        let trimmed = text.trim();
+                        if !trimmed.is_empty() {
+                            hop_limit = trimmed.parse::<u8>().ok();
+                        }
+                    }
+                }
+                "aprs_path" => {
+                    if let Ok(text) = field.text().await {
+                        let trimmed = text.trim();
+                        if !trimmed.is_empty() {
+                            aprs_path = Some(trimmed.to_string());
+                        }
+                    }
+                }
+                "spray_quota" => {
+                    if let Ok(text) = field.text().await {
+                        let trimmed = text.trim();
+                        if !trimmed.is_empty() {
+                            spray_quota = trimmed.parse::<u32>().ok();
+                        }
+                    }
+                }
                 "payload" | "file" => {
                     if let Ok(bytes) = field.bytes().await {
                         payload_bytes = Some(bytes.to_vec());
@@ -270,7 +325,20 @@ pub async fn send_bundle(State(state): State<AppState>, request: Request) -> imp
         let dest = destination.unwrap_or_default();
         let payload = payload_bytes.unwrap_or_default();
 
-        match build_and_inject_bundle(&state, &dest, source.as_deref(), lifetime, payload).await {
+        match build_and_inject_bundle(
+            &state,
+            BundleInjectionParams {
+                destination_str: &dest,
+                source_str: source.as_deref(),
+                lifetime_secs: lifetime,
+                hop_limit,
+                aprs_path: aprs_path.as_deref(),
+                spray_quota,
+                payload_bytes: payload,
+            },
+        )
+        .await
+        {
             Ok(res) => (StatusCode::CREATED, Json(res)).into_response(),
             Err((code, err)) => (code, Json(json!({ "error": err }))).into_response(),
         }
@@ -288,10 +356,15 @@ pub async fn send_bundle(State(state): State<AppState>, request: Request) -> imp
 
         match build_and_inject_bundle(
             &state,
-            &req.destination,
-            req.source.as_deref(),
-            req.lifetime,
-            req.payload.into_bytes(),
+            BundleInjectionParams {
+                destination_str: &req.destination,
+                source_str: req.source.as_deref(),
+                lifetime_secs: req.lifetime,
+                hop_limit: req.hop_limit,
+                aprs_path: req.aprs_path.as_deref(),
+                spray_quota: req.spray_quota,
+                payload_bytes: req.payload.into_bytes(),
+            },
         )
         .await
         {

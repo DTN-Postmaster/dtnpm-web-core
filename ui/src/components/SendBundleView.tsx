@@ -42,6 +42,10 @@ export function SendBundleView({
   const [source, setSource] = useState(defaultSource);
   const [destination, setDestination] = useState(defaultDestination || '');
   const [lifetime, setLifetime] = useState('259200');
+  const [aprsPath, setAprsPath] = useState('');
+  const [hopLimit, setHopLimit] = useState('');
+  const [sprayQuota, setSprayQuota] = useState('');
+  const [showRoutingOpts, setShowRoutingOpts] = useState(false);
   const [mode, setMode] = useState<'text' | 'file' | 'voice'>('text');
   const [textPayload, setTextPayload] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -248,6 +252,15 @@ export function SendBundleView({
         if (lifetime.trim()) {
           formData.append('lifetime', lifetime.trim());
         }
+        if (aprsPath.trim()) {
+          formData.append('aprs_path', aprsPath.trim());
+        }
+        if (hopLimit.trim()) {
+          formData.append('hop_limit', hopLimit.trim());
+        }
+        if (sprayQuota.trim()) {
+          formData.append('spray_quota', sprayQuota.trim());
+        }
         formData.append('file', recordedBlob, filename);
 
         const res = await fetch('/api/v1/bundles', {
@@ -269,6 +282,15 @@ export function SendBundleView({
         }
         if (lifetime.trim()) {
           formData.append('lifetime', lifetime.trim());
+        }
+        if (aprsPath.trim()) {
+          formData.append('aprs_path', aprsPath.trim());
+        }
+        if (hopLimit.trim()) {
+          formData.append('hop_limit', hopLimit.trim());
+        }
+        if (sprayQuota.trim()) {
+          formData.append('spray_quota', sprayQuota.trim());
         }
         formData.append('file', selectedFile);
 
@@ -293,6 +315,9 @@ export function SendBundleView({
             destination: destination.trim(),
             source: source.trim() || undefined,
             lifetime: parseInt(lifetime, 10) || 259200,
+            hop_limit: hopLimit.trim() ? parseInt(hopLimit.trim(), 10) : undefined,
+            aprs_path: aprsPath.trim() || undefined,
+            spray_quota: sprayQuota.trim() ? parseInt(sprayQuota.trim(), 10) : undefined,
             payload: textPayload,
           }),
         });
@@ -426,6 +451,68 @@ export function SendBundleView({
             <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
               Default 259200 seconds (72 hours store-and-forward retention). Select a preset or enter a custom duration in seconds.
             </p>
+          </div>
+
+          {/* Optional Routing Extension Blocks (APRS Path, Hop Limit, Spray-and-Wait) */}
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 p-4">
+            <button
+              type="button"
+              onClick={() => setShowRoutingOpts(!showRoutingOpts)}
+              aria-expanded={showRoutingOpts}
+              class="w-full flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300"
+            >
+              <span>🛰️ Routing Extension Blocks (Optional)</span>
+              <span class="font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
+                {showRoutingOpts ? 'Hide ▲' : 'Configure ▼'}
+              </span>
+            </button>
+
+            {showRoutingOpts && (
+              <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="md:col-span-3">
+                  <label for="send-aprs-path-input" class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    APRS-like Future Path (Block 200)
+                  </label>
+                  <input
+                    id="send-aprs-path-input"
+                    type="text"
+                    value={aprsPath}
+                    onInput={(e) => setAprsPath((e.target as HTMLInputElement).value)}
+                    placeholder="WIDE1-1,WIDE2-2 or dtn://relay1/,WIDE2-2"
+                    class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label for="send-hop-limit-input" class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    Hop Limit (Block 10)
+                  </label>
+                  <input
+                    id="send-hop-limit-input"
+                    type="number"
+                    min="1"
+                    max="255"
+                    value={hopLimit}
+                    onInput={(e) => setHopLimit((e.target as HTMLInputElement).value)}
+                    placeholder="e.g. 16"
+                    class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label for="send-spray-quota-input" class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    Spray-and-Wait Quota (194 &amp; 200)
+                  </label>
+                  <input
+                    id="send-spray-quota-input"
+                    type="number"
+                    min="1"
+                    value={sprayQuota}
+                    onInput={(e) => setSprayQuota((e.target as HTMLInputElement).value)}
+                    placeholder="e.g. 8"
+                    class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Payload Mode Switcher */}
