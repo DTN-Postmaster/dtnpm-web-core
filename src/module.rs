@@ -63,6 +63,12 @@ pub trait WebModule: Send + Sync {
         Ok(())
     }
 
+    /// Returns Hardy BPA [`FilterPack`](hardy_bpa::filter::pack::FilterPack) instances to register
+    /// on [`BpaBuilder`](hardy_bpa::builder::BpaBuilder) prior to BPA startup.
+    fn filter_packs(&self) -> Vec<hardy_bpa::filter::pack::FilterPack> {
+        Vec::new()
+    }
+
     /// Registers DTN BPv7 endpoints/services/applications against the BPA via `ctx`.
     async fn register_bpa(&self, _ctx: &ModuleContext) -> anyhow::Result<()> {
         Ok(())

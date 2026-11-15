@@ -2,7 +2,7 @@ import { h } from 'preact';
 import { NotificationPermissionState } from '../utils/notifications';
 import { AuthState } from './LoginModal';
 
-export type NavTabId = 'station' | 'chat' | 'files' | 'senml' | 'send';
+export type NavTabId = 'station' | 'chat' | 'files' | 'senml' | 'rego_routing' | 'send';
 
 interface NavbarProps {
   activeTab: NavTabId | 'config' | 'bundles' | 'logs';
@@ -52,6 +52,7 @@ export function Navbar({
     { id: 'chat' as const, label: 'Chat', shortLabel: 'Chat', icon: '💬', count: unreadChatCount, moduleId: 'chat' },
     { id: 'files' as const, label: 'Files', shortLabel: 'Files', icon: '📁', count: unreadFilesCount, moduleId: 'files' },
     { id: 'senml' as const, label: 'SenML', shortLabel: 'SenML', icon: '📊', moduleId: 'senml' },
+    { id: 'rego_routing' as const, label: 'Rego Routing', shortLabel: 'Rego', icon: '🛡️', moduleId: 'rego_routing' },
     { id: 'send' as const, label: 'Send Bundle', shortLabel: 'Send', icon: '✉️' },
   ];
   const tabs = enabledModules

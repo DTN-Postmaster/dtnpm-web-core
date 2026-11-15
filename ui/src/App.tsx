@@ -7,6 +7,7 @@ import { SendBundleView } from './components/SendBundleView';
 import { ChatView, ChatMessage } from './components/ChatView';
 import { FilesView } from './components/FilesView';
 import { SenmlView } from './components/SenmlView';
+import { RegoRoutingView } from './components/RegoRoutingView';
 import { LogRecord } from './components/LogsView';
 import { playChime } from './utils/audio';
 import {
@@ -49,6 +50,8 @@ function parseHash(hash: string): {
     return { tab: 'files', fileId, destination };
   } else if (head === 'senml') {
     return { tab: 'senml', fileId: null, destination };
+  } else if (head === 'rego_routing') {
+    return { tab: 'rego_routing', fileId: null, destination };
   } else if (head === 'send') {
     return { tab: 'send', fileId: null, destination };
   } else if (head === 'bundles') {
@@ -600,6 +603,8 @@ export function App() {
           />
         ) : activeTab === 'senml' ? (
           <SenmlView />
+        ) : activeTab === 'rego_routing' ? (
+          <RegoRoutingView />
         ) : (
           <SendBundleView
             stationNodeId={config?.node_id}
