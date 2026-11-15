@@ -22,6 +22,9 @@ export function computeDefaultFilesSource(nodeId?: string, callsign?: string): s
   }
   if (nodeId && nodeId.trim()) {
     const base = nodeId.trim().replace(/\/+$/, '');
+    if (base.startsWith('ipn:')) {
+      return base;
+    }
     return `${base}/files`;
   }
   return '';
@@ -45,6 +48,7 @@ export function SendBundleView({
   const [aprsPath, setAprsPath] = useState('');
   const [hopLimit, setHopLimit] = useState('');
   const [sprayQuota, setSprayQuota] = useState('');
+  const [statusReports, setStatusReports] = useState(false);
   const [showRoutingOpts, setShowRoutingOpts] = useState(false);
   const [mode, setMode] = useState<'text' | 'file' | 'voice'>('text');
   const [textPayload, setTextPayload] = useState('');
@@ -80,11 +84,17 @@ export function SendBundleView({
   const timerRef = useRef<number | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  // Cleanup on unmount or URL change
+  // Cleanup media stream/timer on unmount
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  // Revoke object URL when replaced or unmounted
+  useEffect(() => {
+    return () => {
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   }, [audioUrl]);
@@ -235,78 +245,77 @@ export function SendBundleView({
       return;
     }
 
+    const parsedLifetime = Number(lifetime.trim());
+    if (!Number.isInteger(parsedLifetime) || parsedLifetime < 1) {
+      setError('Lifetime must be a positive integer (seconds)');
+      return;
+    }
+
+    let parsedHopLimit: number | undefined;
+    if (hopLimit.trim()) {
+      const n = Number(hopLimit.trim());
+      if (!Number.isInteger(n) || n < 1 || n > 255) {
+        setError('Hop Limit must be an integer between 1 and 255');
+        return;
+      }
+      parsedHopLimit = n;
+    }
+
+    let parsedSprayQuota: number | undefined;
+    if (sprayQuota.trim()) {
+      const n = Number(sprayQuota.trim());
+      if (!Number.isInteger(n) || n < 1) {
+        setError('Spray-and-Wait Quota must be an integer >= 1');
+        return;
+      }
+      parsedSprayQuota = n;
+    }
+
     setLoading(true);
 
     try {
-      if (mode === 'voice' && recordedBlob) {
-        // Voice note multipart send
-        const isOgg = recordedBlob.type.includes('ogg');
-        const ext = isOgg ? 'ogg' : 'webm';
-        const filename = `voice_note_${Date.now()}.${ext}`;
+      const multipartFile: { blob: Blob; filename?: string } | null =
+        mode === 'voice' && recordedBlob
+          ? {
+              blob: recordedBlob,
+              filename: `voice_note_${Date.now()}.${recordedBlob.type.includes('ogg') ? 'ogg' : 'webm'}`,
+            }
+          : mode === 'file' && selectedFile
+            ? { blob: selectedFile }
+            : null;
 
+      let res: Response;
+      if (multipartFile) {
         const formData = new FormData();
         formData.append('destination', destination.trim());
         if (source.trim()) {
           formData.append('source', source.trim());
         }
-        if (lifetime.trim()) {
-          formData.append('lifetime', lifetime.trim());
-        }
+        formData.append('lifetime', String(parsedLifetime));
         if (aprsPath.trim()) {
           formData.append('aprs_path', aprsPath.trim());
         }
-        if (hopLimit.trim()) {
-          formData.append('hop_limit', hopLimit.trim());
+        if (parsedHopLimit !== undefined) {
+          formData.append('hop_limit', String(parsedHopLimit));
         }
-        if (sprayQuota.trim()) {
-          formData.append('spray_quota', sprayQuota.trim());
+        if (parsedSprayQuota !== undefined) {
+          formData.append('spray_quota', String(parsedSprayQuota));
         }
-        formData.append('file', recordedBlob, filename);
+        if (statusReports) {
+          formData.append('status_reports', 'true');
+        }
+        if (multipartFile.filename) {
+          formData.append('file', multipartFile.blob, multipartFile.filename);
+        } else {
+          formData.append('file', multipartFile.blob);
+        }
 
-        const res = await fetch('/api/v1/bundles', {
+        res = await fetch('/api/v1/bundles', {
           method: 'POST',
           body: formData,
         });
-
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || `HTTP ${res.status}`);
-        }
-        setResult(data);
-      } else if (mode === 'file' && selectedFile) {
-        // Multipart send
-        const formData = new FormData();
-        formData.append('destination', destination.trim());
-        if (source.trim()) {
-          formData.append('source', source.trim());
-        }
-        if (lifetime.trim()) {
-          formData.append('lifetime', lifetime.trim());
-        }
-        if (aprsPath.trim()) {
-          formData.append('aprs_path', aprsPath.trim());
-        }
-        if (hopLimit.trim()) {
-          formData.append('hop_limit', hopLimit.trim());
-        }
-        if (sprayQuota.trim()) {
-          formData.append('spray_quota', sprayQuota.trim());
-        }
-        formData.append('file', selectedFile);
-
-        const res = await fetch('/api/v1/bundles', {
-          method: 'POST',
-          body: formData,
-        });
-
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || `HTTP ${res.status}`);
-        }
-        setResult(data);
       } else {
-        // JSON send
-        const res = await fetch('/api/v1/bundles', {
+        res = await fetch('/api/v1/bundles', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -314,20 +323,21 @@ export function SendBundleView({
           body: JSON.stringify({
             destination: destination.trim(),
             source: source.trim() || undefined,
-            lifetime: parseInt(lifetime, 10) || 259200,
-            hop_limit: hopLimit.trim() ? parseInt(hopLimit.trim(), 10) : undefined,
+            lifetime: parsedLifetime,
+            hop_limit: parsedHopLimit,
             aprs_path: aprsPath.trim() || undefined,
-            spray_quota: sprayQuota.trim() ? parseInt(sprayQuota.trim(), 10) : undefined,
+            spray_quota: parsedSprayQuota,
+            status_reports: statusReports,
             payload: textPayload,
           }),
         });
-
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || `HTTP ${res.status}`);
-        }
-        setResult(data);
       }
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      setResult(data);
     } catch (err: any) {
       setError(err.message || 'Unknown network error occurred');
     } finally {
@@ -335,11 +345,15 @@ export function SendBundleView({
     }
   };
 
-  const copyBundleId = () => {
-    if (result?.bundle_id) {
-      navigator.clipboard.writeText(result.bundle_id);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const copyBundleId = async () => {
+    if (result?.bundle_id && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(result.bundle_id);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        // Clipboard unavailable on insecure HTTP origins
+      }
     }
   };
 
@@ -499,7 +513,7 @@ export function SendBundleView({
                 </div>
                 <div>
                   <label for="send-spray-quota-input" class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                    Spray-and-Wait Quota (194 &amp; 200)
+                    Spray-and-Wait Max Copies / Quota (194 &amp; 200)
                   </label>
                   <input
                     id="send-spray-quota-input"
@@ -510,6 +524,20 @@ export function SendBundleView({
                     placeholder="e.g. 8"
                     class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
+                </div>
+                <div class="md:col-span-3 pt-1">
+                  <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      id="send-status-reports-checkbox"
+                      type="checkbox"
+                      checked={statusReports}
+                      onChange={(e) => setStatusReports((e.target as HTMLInputElement).checked)}
+                      class="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span class="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Request BPv7 Status Reports (receipt, forward, delivery &amp; deletion, RFC 9171)
+                    </span>
+                  </label>
                 </div>
               </div>
             )}

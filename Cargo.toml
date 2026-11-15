@@ -21,7 +21,7 @@ futures-util = "0.3"
 hyper = { version = "1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
 ipnet = "2"
-rusqlite = { version = "0.40", features = ["array", "bundled", "time"] }
+rusqlite = { version = "0.41", features = ["array", "bundled", "time"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pki-types = "1"
 serde = { version = "1", features = ["derive"] }

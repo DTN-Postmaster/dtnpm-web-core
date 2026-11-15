@@ -64,8 +64,8 @@ interface BundlesViewProps {
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
@@ -240,10 +240,15 @@ export function BundlesView({ onRefresh, canManageAdmin = true }: BundlesViewPro
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setActionSuccess('Copied to clipboard!');
-    setTimeout(() => setActionSuccess(null), 2500);
+  const copyToClipboard = async (text: string) => {
+    if (!navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setActionSuccess('Copied to clipboard!');
+      setTimeout(() => setActionSuccess(null), 2500);
+    } catch {
+      // Clipboard unavailable on insecure HTTP origins
+    }
   };
 
   // Filtered bundles

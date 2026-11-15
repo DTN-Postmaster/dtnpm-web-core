@@ -100,10 +100,10 @@ fn parse_http_range(req_headers: &HeaderMap, total_len: u64) -> Option<Result<(u
             let end = if end_str.is_empty() {
                 total_len - 1
             } else {
-                end_str
-                    .parse::<u64>()
-                    .unwrap_or(total_len - 1)
-                    .min(total_len - 1)
+                match end_str.parse::<u64>() {
+                    Ok(v) => v.min(total_len - 1),
+                    Err(_) => return Some(Err(())),
+                }
             };
             if start <= end {
                 Some(Ok((start, end)))
@@ -118,6 +118,22 @@ fn parse_http_range(req_headers: &HeaderMap, total_len: u64) -> Option<Result<(u
     }
 }
 
+fn refine_ogg_opus_mime(raw_mime: &str, head: &[u8], total_len: u64) -> String {
+    if (raw_mime == "audio/ogg" || raw_mime == "audio/opus" || raw_mime.is_empty())
+        && total_len >= 36
+        && head.len() >= 36
+        && &head[0..4] == b"OggS"
+    {
+        let page_segments = head[26] as usize;
+        let packet_offset = 27 + page_segments;
+        if head.len() >= packet_offset + 8 && &head[packet_offset..packet_offset + 8] == b"OpusHead"
+        {
+            return "audio/ogg; codecs=opus".to_string();
+        }
+    }
+    raw_mime.to_string()
+}
+
 /// Serves a byte payload with support for Content-Type, Content-Disposition, and HTTP Range requests (RFC 9110).
 pub fn serve_payload_with_range(
     bytes: Bytes,
@@ -127,21 +143,7 @@ pub fn serve_payload_with_range(
     req_headers: &HeaderMap,
 ) -> Response {
     let total_len = bytes.len() as u64;
-
-    // Dynamically refine Ogg Opus MIME type if OpusHead signature is detected
-    let mut mime_type = raw_mime.to_string();
-    if (mime_type == "audio/ogg" || mime_type == "audio/opus" || mime_type.is_empty())
-        && total_len >= 36
-        && &bytes[0..4] == b"OggS"
-    {
-        let page_segments = bytes[26] as usize;
-        let packet_offset = 27 + page_segments;
-        if total_len as usize >= packet_offset + 8
-            && &bytes[packet_offset..packet_offset + 8] == b"OpusHead"
-        {
-            mime_type = "audio/ogg; codecs=opus".to_string();
-        }
-    }
+    let mime_type = refine_ogg_opus_mime(raw_mime, &bytes, total_len);
 
     let mut headers = prepare_payload_headers(total_len, &mime_type, filename, is_download);
 
@@ -185,24 +187,29 @@ pub async fn serve_payload_file_slice_with_range(
     use tokio_util::io::ReaderStream;
 
     let total_len = slice_len;
-    let mut mime_type = raw_mime.to_string();
+    let mut file = match tokio::fs::File::open(path).await {
+        Ok(f) => f,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
 
-    // Check Ogg Opus header from first 64 bytes of the slice
+    // Check Ogg Opus header from first 64 bytes of the slice using the same handle
+    let mut mime_type = raw_mime.to_string();
     if (mime_type == "audio/ogg" || mime_type == "audio/opus" || mime_type.is_empty())
         && total_len >= 36
-        && let Ok(mut f) = tokio::fs::File::open(path).await
-        && f.seek(std::io::SeekFrom::Start(slice_offset)).await.is_ok()
+        && file
+            .seek(std::io::SeekFrom::Start(slice_offset))
+            .await
+            .is_ok()
     {
         let mut head = [0u8; 64];
-        if let Ok(n) = f.read(&mut head).await
-            && n >= 36
-            && &head[0..4] == b"OggS"
-        {
-            let page_segments = head[26] as usize;
-            let packet_offset = 27 + page_segments;
-            if n >= packet_offset + 8 && &head[packet_offset..packet_offset + 8] == b"OpusHead" {
-                mime_type = "audio/ogg; codecs=opus".to_string();
-            }
+        if let Ok(n) = file.read(&mut head).await {
+            mime_type = refine_ogg_opus_mime(raw_mime, &head[..n], total_len);
         }
     }
 
@@ -217,16 +224,6 @@ pub async fn serve_payload_file_slice_with_range(
                 }
                 headers.insert(header::CONTENT_LENGTH, HeaderValue::from(range_len));
 
-                let mut file = match tokio::fs::File::open(path).await {
-                    Ok(f) => f,
-                    Err(e) => {
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            Json(serde_json::json!({ "error": e.to_string() })),
-                        )
-                            .into_response();
-                    }
-                };
                 let physical_start = slice_offset.saturating_add(start);
                 if let Err(e) = file.seek(std::io::SeekFrom::Start(physical_start)).await {
                     return (
@@ -254,16 +251,6 @@ pub async fn serve_payload_file_slice_with_range(
     }
 
     headers.insert(header::CONTENT_LENGTH, HeaderValue::from(total_len));
-    let mut file = match tokio::fs::File::open(path).await {
-        Ok(f) => f,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": e.to_string() })),
-            )
-                .into_response();
-        }
-    };
     if let Err(e) = file.seek(std::io::SeekFrom::Start(slice_offset)).await {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,

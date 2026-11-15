@@ -5,6 +5,7 @@ use axum::extract::{FromRequest, Multipart, Request, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use bytes::Bytes;
+use dtnpm_core::normalize_eid;
 use hardy_bpv7::builder::Builder;
 use hardy_bpv7::creation_timestamp::CreationTimestamp;
 use hardy_bpv7::eid::Eid;
@@ -26,17 +27,8 @@ pub struct SendBundleJsonRequest {
     pub aprs_path: Option<String>,
     #[serde(default)]
     pub spray_quota: Option<u32>,
-}
-
-fn normalize_eid(s: &str) -> String {
-    let s = s.trim();
-    if let Some(rest) = s
-        .strip_prefix("dtn://")
-        .filter(|r| !r.is_empty() && !r.contains('/'))
-    {
-        return format!("dtn://{}/", rest);
-    }
-    s.to_string()
+    #[serde(default)]
+    pub status_reports: bool,
 }
 
 const MAX_FFMPEG_INPUT_BYTES: usize = 16 * 1024 * 1024;
@@ -103,19 +95,20 @@ pub async fn maybe_remux_webm_to_ogg(payload: Vec<u8>) -> Vec<u8> {
     }
 }
 
-struct BundleInjectionParams<'a> {
-    destination_str: &'a str,
-    source_str: Option<&'a str>,
+struct BundleInjectionParams {
+    destination_str: String,
+    source_str: Option<String>,
     lifetime_secs: Option<u64>,
     hop_limit: Option<u8>,
-    aprs_path: Option<&'a str>,
+    aprs_path: Option<String>,
     spray_quota: Option<u32>,
+    status_reports: bool,
     payload_bytes: Vec<u8>,
 }
 
 async fn build_and_inject_bundle(
     state: &AppState,
-    params: BundleInjectionParams<'_>,
+    params: BundleInjectionParams,
 ) -> Result<serde_json::Value, (StatusCode, String)> {
     let BundleInjectionParams {
         destination_str,
@@ -124,6 +117,7 @@ async fn build_and_inject_bundle(
         hop_limit,
         aprs_path,
         spray_quota,
+        status_reports,
         payload_bytes,
     } = params;
     let payload_bytes = maybe_remux_webm_to_ogg(payload_bytes).await;
@@ -134,7 +128,7 @@ async fn build_and_inject_bundle(
         ));
     }
 
-    let norm_dest = normalize_eid(destination_str);
+    let norm_dest = normalize_eid(&destination_str);
     let destination_eid: Eid = norm_dest.parse().map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -142,7 +136,8 @@ async fn build_and_inject_bundle(
         )
     })?;
 
-    let source_eid: Eid = if let Some(src) = source_str.filter(|s| !s.trim().is_empty()) {
+    let source_eid: Eid = if let Some(src) = source_str.as_deref().filter(|s| !s.trim().is_empty())
+    {
         let norm_src = normalize_eid(src);
         norm_src.parse().map_err(|e| {
             (
@@ -153,6 +148,8 @@ async fn build_and_inject_bundle(
     } else {
         let default_source = if let Some(cs) = &state.config.callsign {
             format!("dtn://{}/files", cs.to_lowercase())
+        } else if state.config.node_id.trim().starts_with("ipn:") {
+            state.config.node_id.trim().to_string()
         } else {
             let base = state.config.node_id.trim_end_matches('/');
             format!("{base}/files")
@@ -169,13 +166,16 @@ async fn build_and_inject_bundle(
     let lifetime = std::time::Duration::from_secs(lifetime_secs.unwrap_or(3600));
     let payload_len = payload_bytes.len();
 
-    let builder = Builder::new(source_eid.clone(), destination_eid.clone())
+    let mut builder = Builder::new(source_eid.clone(), destination_eid.clone())
         .with_payload(payload_bytes.into())
         .with_lifetime(lifetime);
+    if status_reports {
+        builder = builder.with_flags(dtnpm_core::mesh_blocks::status_report_flags());
+    }
     let builder = dtnpm_core::mesh_blocks::apply_routing_extensions(
         builder,
         hop_limit,
-        aprs_path,
+        aprs_path.as_deref(),
         spray_quota,
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
@@ -251,7 +251,7 @@ pub async fn send_bundle(State(state): State<AppState>, request: Request) -> imp
         .unwrap_or("")
         .to_string();
 
-    if content_type.starts_with("multipart/form-data") {
+    let params = if content_type.starts_with("multipart/form-data") {
         let mut multipart = match Multipart::from_request(request, &state).await {
             Ok(m) => m,
             Err(e) => {
@@ -269,78 +269,100 @@ pub async fn send_bundle(State(state): State<AppState>, request: Request) -> imp
         let mut hop_limit: Option<u8> = None;
         let mut aprs_path: Option<String> = None;
         let mut spray_quota: Option<u32> = None;
+        let mut status_reports = false;
         let mut payload_bytes: Option<Vec<u8>> = None;
 
-        while let Ok(Some(field)) = multipart.next_field().await {
+        loop {
+            let field = match multipart.next_field().await {
+                Ok(Some(f)) => f,
+                Ok(None) => break,
+                Err(e) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({ "error": format!("Multipart read error: {e}") })),
+                    )
+                        .into_response();
+                }
+            };
             let name = field.name().unwrap_or("").to_string();
+            if matches!(name.as_str(), "payload" | "file") {
+                match field.bytes().await {
+                    Ok(bytes) => payload_bytes = Some(bytes.to_vec()),
+                    Err(e) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({ "error": format!("Failed to read payload bytes: {e}") })),
+                        )
+                            .into_response();
+                    }
+                }
+                continue;
+            }
+
+            let text = match field.text().await {
+                Ok(t) => t,
+                Err(e) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({ "error": format!("Invalid field '{name}': {e}") })),
+                    )
+                        .into_response();
+                }
+            };
+            let trimmed = text.trim();
             match name.as_str() {
-                "destination" => {
-                    if let Ok(text) = field.text().await {
-                        destination = Some(text);
+                "destination" => destination = Some(text),
+                "source" => source = Some(text),
+                "lifetime" if !trimmed.is_empty() => match trimmed.parse::<u64>() {
+                    Ok(v) => lifetime = Some(v),
+                    Err(_) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({ "error": format!("Invalid lifetime '{trimmed}'") })),
+                        )
+                            .into_response();
                     }
-                }
-                "source" => {
-                    if let Ok(text) = field.text().await {
-                        source = Some(text);
+                },
+                "hop_limit" if !trimmed.is_empty() => match trimmed.parse::<u8>() {
+                    Ok(v) => hop_limit = Some(v),
+                    Err(_) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({ "error": format!("Invalid hop_limit '{trimmed}' (expected 1..=255)") })),
+                        )
+                            .into_response();
                     }
-                }
-                "lifetime" => {
-                    if let Ok(text) = field.text().await {
-                        lifetime = text.trim().parse::<u64>().ok();
+                },
+                "aprs_path" if !trimmed.is_empty() => aprs_path = Some(trimmed.to_string()),
+                "spray_quota" if !trimmed.is_empty() => match trimmed.parse::<u32>() {
+                    Ok(v) => spray_quota = Some(v),
+                    Err(_) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({ "error": format!("Invalid spray_quota '{trimmed}'") })),
+                        )
+                            .into_response();
                     }
-                }
-                "hop_limit" => {
-                    if let Ok(text) = field.text().await {
-                        let trimmed = text.trim();
-                        if !trimmed.is_empty() {
-                            hop_limit = trimmed.parse::<u8>().ok();
-                        }
-                    }
-                }
-                "aprs_path" => {
-                    if let Ok(text) = field.text().await {
-                        let trimmed = text.trim();
-                        if !trimmed.is_empty() {
-                            aprs_path = Some(trimmed.to_string());
-                        }
-                    }
-                }
-                "spray_quota" => {
-                    if let Ok(text) = field.text().await {
-                        let trimmed = text.trim();
-                        if !trimmed.is_empty() {
-                            spray_quota = trimmed.parse::<u32>().ok();
-                        }
-                    }
-                }
-                "payload" | "file" => {
-                    if let Ok(bytes) = field.bytes().await {
-                        payload_bytes = Some(bytes.to_vec());
-                    }
+                },
+                "status_reports" => {
+                    status_reports = matches!(
+                        trimmed.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
                 }
                 _ => {}
             }
         }
 
-        let dest = destination.unwrap_or_default();
-        let payload = payload_bytes.unwrap_or_default();
-
-        match build_and_inject_bundle(
-            &state,
-            BundleInjectionParams {
-                destination_str: &dest,
-                source_str: source.as_deref(),
-                lifetime_secs: lifetime,
-                hop_limit,
-                aprs_path: aprs_path.as_deref(),
-                spray_quota,
-                payload_bytes: payload,
-            },
-        )
-        .await
-        {
-            Ok(res) => (StatusCode::CREATED, Json(res)).into_response(),
-            Err((code, err)) => (code, Json(json!({ "error": err }))).into_response(),
+        BundleInjectionParams {
+            destination_str: destination.unwrap_or_default(),
+            source_str: source,
+            lifetime_secs: lifetime,
+            hop_limit,
+            aprs_path,
+            spray_quota,
+            status_reports,
+            payload_bytes: payload_bytes.unwrap_or_default(),
         }
     } else {
         let Json(req) = match Json::<SendBundleJsonRequest>::from_request(request, &state).await {
@@ -354,23 +376,21 @@ pub async fn send_bundle(State(state): State<AppState>, request: Request) -> imp
             }
         };
 
-        match build_and_inject_bundle(
-            &state,
-            BundleInjectionParams {
-                destination_str: &req.destination,
-                source_str: req.source.as_deref(),
-                lifetime_secs: req.lifetime,
-                hop_limit: req.hop_limit,
-                aprs_path: req.aprs_path.as_deref(),
-                spray_quota: req.spray_quota,
-                payload_bytes: req.payload.into_bytes(),
-            },
-        )
-        .await
-        {
-            Ok(res) => (StatusCode::CREATED, Json(res)).into_response(),
-            Err((code, err)) => (code, Json(json!({ "error": err }))).into_response(),
+        BundleInjectionParams {
+            destination_str: req.destination,
+            source_str: req.source,
+            lifetime_secs: req.lifetime,
+            hop_limit: req.hop_limit,
+            aprs_path: req.aprs_path,
+            spray_quota: req.spray_quota,
+            status_reports: req.status_reports,
+            payload_bytes: req.payload.into_bytes(),
         }
+    };
+
+    match build_and_inject_bundle(&state, params).await {
+        Ok(res) => (StatusCode::CREATED, Json(res)).into_response(),
+        Err((code, err)) => (code, Json(json!({ "error": err }))).into_response(),
     }
 }
 
@@ -412,23 +432,39 @@ pub async fn list_bundles(
                 tracing::error!("get_bundle_detail error: {e}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
+                    Json(json!({ "error": "Failed to inspect bundle" })),
                 )
                     .into_response()
             }
         }
     } else {
-        match dtnpm_core::bundle_inspector::list_bundles_from_db(
-            &db_path,
-            Some(&payload_dir),
-            Some(&state.keystore),
-        ) {
-            Ok(bundles) => Json(json!(bundles)).into_response(),
-            Err(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+        let keystore = state.keystore.clone();
+        match tokio::task::spawn_blocking(move || {
+            dtnpm_core::bundle_inspector::list_bundles_from_db(
+                &db_path,
+                Some(&payload_dir),
+                Some(&keystore),
             )
-                .into_response(),
+        })
+        .await
+        {
+            Ok(Ok(bundles)) => Json(json!(bundles)).into_response(),
+            Ok(Err(e)) => {
+                tracing::error!("list_bundles_from_db error: {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": "Failed to list bundles" })),
+                )
+                    .into_response()
+            }
+            Err(e) => {
+                tracing::error!("list_bundles spawn_blocking join error: {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": "Internal server error" })),
+                )
+                    .into_response()
+            }
         }
     }
 }
@@ -470,11 +506,14 @@ pub async fn get_bundle_payload_handler(
             Json(json!({ "error": "Bundle or payload not found" })),
         )
             .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
-        )
-            .into_response(),
+        Err(e) => {
+            tracing::error!("get_bundle_payload error: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Failed to retrieve bundle payload" })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -510,10 +549,13 @@ pub async fn delete_bundle_handler(
             Json(json!({ "error": "Bundle not found" })),
         )
             .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
-        )
-            .into_response(),
+        Err(e) => {
+            tracing::error!("get_bundle_payload error: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Failed to retrieve bundle payload" })),
+            )
+                .into_response()
+        }
     }
 }
