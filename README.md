@@ -2,6 +2,16 @@
 
 Core Axum WebUI server, plugin registry (`WebModule`), capabilities discovery API, system routes, and Preact WebUI shell for **DTN Postmaster** (`dtnpm`).
 
+## Screenshots
+
+| Station Overview | Bundle Storage Inspector |
+| :---: | :---: |
+| ![Station Overview](docs/screenshots/station-overview.png) | ![Bundle Storage Inspector](docs/screenshots/bundles-inspector.png) |
+
+| Send Bundle |
+| :---: |
+| ![Send Bundle](docs/screenshots/send-bundle.png) |
+
 ## Architecture
 
 `dtnpm-web-core` decouples the core HTTP/SSE console from optional application plugins:
