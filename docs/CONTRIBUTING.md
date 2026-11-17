@@ -1,22 +1,22 @@
-# Guide de Contribution — `dtnpm-web-core`
+# Contributing Guide — `dtnpm-web-core`
 
-Ce guide présente les règles de développement et les exigences de sécurité pour le serveur Web et l'interface utilisateur de `dtnpm-web-core`.
-
----
-
-## 1. Principes Fondamentaux
-
-- **Zéro Panic / Zéro Unwrap** : Aucun appel `.unwrap()` ou `.expect()` en code de production.
-- **Sécurité Web OWASP** :
-  - Toujours valider les origines des requêtes CORS et CSRF.
-  - Ne jamais exposer de contenu utilisateur non assaini en mode `inline` (forcer `attachment` pour les formats à risque comme SVG).
-  - Borner strictement les processus enfants (`ffmpeg`) et les limites de taille de payload.
-- **Traçabilité Architecturale (ADR)** :
-  - Tout changement de routage, d'authentification ou de rendu UI doit être consigné dans `adr/` et indexé dans `adr/README.md`.
+This guide outlines the development rules and security requirements for the `dtnpm-web-core` web server and user interface.
 
 ---
 
-## 2. Vérification Locale
+## 1. Core Principles
+
+- **Zero Panic / Zero Unwrap**: No `.unwrap()` or `.expect()` calls in production code.
+- **OWASP Web Security**:
+  - Always validate request origins for CORS and CSRF.
+  - Never expose unsanitized user content in `inline` mode (force `attachment` for risky formats such as SVG).
+  - Strictly bound child processes (`ffmpeg`) and payload size limits.
+- **Architectural Traceability (ADR)**:
+  - Any change to routing, authentication, or UI rendering must be recorded in `adr/` and indexed in `adr/README.md`.
+
+---
+
+## 2. Local Verification
 
 ```bash
 cargo fmt --all -- --check
