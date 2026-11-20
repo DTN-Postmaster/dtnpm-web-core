@@ -109,6 +109,7 @@ export function ConfigView({
   ];
   const [connectingPeer, setConnectingPeer] = useState<string | null>(null);
   const [connectMessage, setConnectMessage] = useState<{
+    claName: string;
     success: boolean;
     text: string;
   } | null>(null);
@@ -339,7 +340,7 @@ export function ConfigView({
     }
   }, [config]);
 
-  const handleForceConnect = async (peerStr: string) => {
+  const handleForceConnect = async (claName: string, peerStr: string) => {
     setConnectingPeer(peerStr);
     setConnectMessage(null);
     try {
@@ -351,18 +352,21 @@ export function ConfigView({
       const data = await res.json();
       if (res.ok) {
         setConnectMessage({
+          claName,
           success: true,
           text: `Successfully connected to peer ${peerStr}`,
         });
         setTimeout(() => setConnectMessage(null), 5000);
       } else {
         setConnectMessage({
+          claName,
           success: false,
           text: data.error || `Connection to ${peerStr} failed (HTTP ${res.status})`,
         });
       }
     } catch (err: any) {
       setConnectMessage({
+        claName,
         success: false,
         text: err.message || `Failed to connect to ${peerStr}`,
       });
@@ -739,7 +743,7 @@ export function ConfigView({
                   <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 text-xs">
                     <span class="text-slate-400 font-medium">Configured Peers:</span>
 
-                    {connectMessage && (
+                    {connectMessage && connectMessage.claName === cla.name && (
                       <div
                         class={`mt-2 p-2.5 rounded-lg text-xs font-medium border flex items-center justify-between ${
                           connectMessage.success
@@ -799,7 +803,7 @@ export function ConfigView({
                                 {/* Manual Connect Button */}
                                 {canManageAdmin && (
                                   <button
-                                    onClick={() => handleForceConnect(peerTarget)}
+                                    onClick={() => handleForceConnect(cla.name, peerTarget)}
                                     disabled={isConnecting}
                                     title={`Force connection to peer ${peerTarget}`}
                                     class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"

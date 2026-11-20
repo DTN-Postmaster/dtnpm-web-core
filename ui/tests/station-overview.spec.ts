@@ -172,6 +172,52 @@ test.describe('Station Overview & Identity', () => {
     await expect(page.locator('text=Successfully connected to peer 192.168.1.100:4556')).toBeVisible();
   });
 
+  test('scopes connect error banner to the target CLA card only', async ({ page }) => {
+    await page.route('**/api/v1/config', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...mockStationConfig,
+          clas: [
+            {
+              name: 'tcp-f4jxq',
+              type: 'tcpclv4',
+              peers: ['192.168.1.100:4556'],
+            },
+            {
+              name: 'mercury-hf',
+              type: 'mercury-arq',
+              peers: [{ callsign: 'VA3NB' }],
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.route('**/api/v1/clas/connect*', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'Connection to VA3NB failed: Connection timed out',
+          peer: 'VA3NB',
+        }),
+      });
+    });
+
+    await page.goto('/');
+
+    const mercuryCard = page.locator('div.rounded-xl', { hasText: 'mercury-hf' }).first();
+    const tcpCard = page.locator('div.rounded-xl', { hasText: 'tcp-f4jxq' }).first();
+
+    await mercuryCard.getByRole('button', { name: /Connect/i }).click();
+
+    await expect(page.getByText('Connection to VA3NB failed: Connection timed out')).toHaveCount(1);
+    await expect(mercuryCard.getByText('Connection to VA3NB failed: Connection timed out')).toBeVisible();
+    await expect(tcpCard.getByText('Connection to VA3NB failed: Connection timed out')).not.toBeVisible();
+  });
+
   test('renders active DTN services with permanent echo service', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'Active DTN Services' })).toBeVisible();
     await expect(page.getByText('1 active')).toBeVisible();
