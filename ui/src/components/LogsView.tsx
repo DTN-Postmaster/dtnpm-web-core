@@ -279,7 +279,7 @@ export function LogsView({ incomingLog, sseStatus }: LogsViewProps) {
             <div class="w-3 h-3 rounded-full bg-rose-500/80" />
             <div class="w-3 h-3 rounded-full bg-amber-500/80" />
             <div class="w-3 h-3 rounded-full bg-emerald-500/80" />
-            <span class="text-slate-400 text-xs ml-2">dtn-hdy-ham daemon stream</span>
+            <span class="text-slate-400 text-xs ml-2">dtnpm daemon stream</span>
           </div>
           <div class="text-slate-500 text-xs">
             Showing {filteredLogs.length} / {logs.length} entries

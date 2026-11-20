@@ -1,7 +1,7 @@
 {
-  "name": "Hardy DTN Ham BPA",
-  "short_name": "Hardy Ham",
-  "description": "Hardy BPv7 Bundle Processing Agent for Amateur Radio Operators",
+  "name": "DTN Postmaster BPA",
+  "short_name": "DTN Postmaster",
+  "description": "DTN Postmaster BPv7 Bundle Processing Agent for Amateur Radio Operators",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -1,5 +1,5 @@
 {
-  "name": "dtn-hdy-ham-web",
+  "name": "dtnpm-web",
   "version": "0.1.0",
   "private": true,
   "type": "module",

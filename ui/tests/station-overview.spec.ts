@@ -8,7 +8,7 @@ const mockStationConfig = {
   admin_endpoints: ['dtn://f4jxq/~admin'],
   storage: {
     in_memory: false,
-    sqlite_path: '/var/lib/dtn-hdy-ham/bundles.db',
+    sqlite_path: '/var/lib/dtnpm/bundles.db',
   },
   grpc: {
     enabled: true,
@@ -117,7 +117,7 @@ test.describe('Station Overview & Identity', () => {
     await expect(navbar).toBeVisible();
 
     // Verify title and badge
-    await expect(navbar.getByText(/DTN HdyHam|Hardy BPA/)).toBeVisible();
+    await expect(navbar.getByText(/DTN Postmaster|Hardy BPA/)).toBeVisible();
     await expect(navbar.getByText('Hamradio')).toBeVisible();
 
     // Verify amateur radio callsign and node EID
@@ -132,7 +132,7 @@ test.describe('Station Overview & Identity', () => {
 
     // Check node parameters in overview
     await expect(page.getByText('dtn://f4jxq/~admin')).toBeVisible();
-    await expect(page.getByText('/var/lib/dtn-hdy-ham/bundles.db')).toBeVisible();
+    await expect(page.getByText('/var/lib/dtnpm/bundles.db')).toBeVisible();
   });
 
   test('lists active convergence layers and routes', async ({ page }) => {

@@ -5,8 +5,8 @@ const mockLogs = [
     id: 1,
     timestamp: '2026-11-07T12:00:00Z',
     level: 'INFO',
-    target: 'dtn_hdy_ham::server',
-    message: 'Starting Hardy Ham BPA node',
+    target: 'dtnpm::server',
+    message: 'Starting DTN Postmaster BPA node',
   },
   {
     id: 2,
@@ -26,7 +26,7 @@ const mockLogs = [
     id: 4,
     timestamp: '2026-11-07T12:00:03Z',
     level: 'DEBUG',
-    target: 'dtn_hdy_ham::chat',
+    target: 'dtnpm::chat',
     message: 'Stored chat message from dtn://f4jxq/chat',
   },
 ];
@@ -104,7 +104,7 @@ test.describe('System Log Console', () => {
     await expect(page.getByText('Showing 4 / 4 entries')).toBeVisible();
 
     // Check initial log messages are rendered
-    await expect(page.getByText('Starting Hardy Ham BPA node')).toBeVisible();
+    await expect(page.getByText('Starting DTN Postmaster BPA node')).toBeVisible();
     await expect(page.getByText('Segment checksum mismatch')).toBeVisible();
   });
 
@@ -115,7 +115,7 @@ test.describe('System Log Console', () => {
     await page.getByRole('button', { name: 'ERROR' }).click();
     await expect(page.getByText('Showing 1 / 4 entries')).toBeVisible();
     await expect(page.getByText('Segment checksum mismatch')).toBeVisible();
-    await expect(page.getByText('Starting Hardy Ham BPA node')).not.toBeVisible();
+    await expect(page.getByText('Starting DTN Postmaster BPA node')).not.toBeVisible();
 
     // Click WARN filter
     await page.getByRole('button', { name: 'WARN' }).click();
@@ -135,7 +135,7 @@ test.describe('System Log Console', () => {
 
     await expect(page.getByText('Showing 1 / 4 entries')).toBeVisible();
     await expect(page.getByText('Segment checksum mismatch')).toBeVisible();
-    await expect(page.getByText('Starting Hardy Ham BPA node')).not.toBeVisible();
+    await expect(page.getByText('Starting DTN Postmaster BPA node')).not.toBeVisible();
 
     // Clear search
     await page.getByRole('button', { name: 'Clear search' }).click();
