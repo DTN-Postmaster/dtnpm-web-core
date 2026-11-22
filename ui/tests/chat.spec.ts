@@ -339,4 +339,221 @@ test.describe('Interactive Chat Service & Messenger', () => {
     await expect(page.locator('text=Destination EID: dtn://f4jxq-9/chat')).toBeVisible();
     await expect(page.getByText('/chat/chat')).not.toBeVisible();
   });
+
+  test('newly sent message does not disappear or re-scroll when a stale background poll resolves after POST', async ({ page }) => {
+    await page.clock.install();
+
+    let pollCount = 0;
+    let releaseStalePoll: (() => void) | null = null;
+    let currentMessages = [...mockF4jxqMessages];
+
+    await page.route('**/api/chat/v1/messages**', async (route) => {
+      if (route.request().method() === 'GET') {
+        pollCount += 1;
+        if (pollCount === 2) {
+          // Hold the 2nd GET (first 4s background poll) pending until after POST completes
+          await new Promise<void>((resolve) => {
+            releaseStalePoll = resolve;
+          });
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(mockF4jxqMessages),
+          });
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(currentMessages),
+        });
+      } else if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON();
+        const sentMsg = {
+          id: 'bundle-smooth-001',
+          conversation_peer: body.peer,
+          sender_eid: 'dtn://stata/chat',
+          recipient_eid: body.peer,
+          content: body.content,
+          direction: 'outbound',
+          status: 'sent',
+          is_read: true,
+          timestamp: Date.now(),
+          created_at: new Date().toISOString(),
+        };
+        currentMessages = [...currentMessages, sentMsg];
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(sentMsg),
+        });
+      }
+    });
+
+    await page.locator('header nav button', { hasText: 'Chat' }).click();
+    await expect(page.locator('text=Hello F4JXQ de STATA on VHF packet')).toBeVisible();
+
+    // Advance 4s so the background poll (#2) starts and stays in-flight
+    await page.clock.runFor(4100);
+    await expect.poll(() => releaseStalePoll).not.toBeNull();
+
+    // Send a new message while poll #2 is in-flight
+    const textarea = page.locator('textarea[placeholder*="dtn://f4jxq/chat"]');
+    await textarea.fill('Smooth message without flicker');
+    await page.locator('button[type="submit"]', { hasText: 'Send' }).click();
+    await expect(page.locator('text=Smooth message without flicker')).toBeVisible();
+
+    // Track any DOM removal of the sent message node
+    await page.evaluate(() => {
+      (window as any).__removedSentNode = false;
+      const container = document.querySelector('div.overflow-y-auto.space-y-3');
+      if (!container) return;
+      const observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          for (const node of m.removedNodes) {
+            if (node instanceof HTMLElement && node.innerText.includes('Smooth message without flicker')) {
+              (window as any).__removedSentNode = true;
+            }
+          }
+        }
+      });
+      observer.observe(container, { childList: true, subtree: true });
+    });
+
+    // Resolve the stale pre-send poll #2 and wait for browser to process its response
+    const stalePollResponse = page.waitForResponse(
+      (res) => res.url().includes('/api/chat/v1/messages') && res.request().method() === 'GET'
+    );
+    releaseStalePoll!();
+    await stalePollResponse;
+    await page.clock.runFor(100);
+
+    // Message must remain continuously visible and never have been removed from DOM
+    await expect(page.locator('text=Smooth message without flicker')).toBeVisible();
+    const wasRemoved = await page.evaluate(() => (window as any).__removedSentNode);
+    expect(wasRemoved).toBe(false);
+
+    // Subsequent poll (#3) also keeps it visible without removal
+    const nextPollResponse = page.waitForResponse(
+      (res) => res.url().includes('/api/chat/v1/messages') && res.request().method() === 'GET'
+    );
+    await page.clock.runFor(4100);
+    await nextPollResponse;
+    await expect(page.locator('text=Smooth message without flicker')).toBeVisible();
+    const wasRemovedAfterNextPoll = await page.evaluate(() => (window as any).__removedSentNode);
+    expect(wasRemovedAfterNextPoll).toBe(false);
+  });
+
+  test('background polling does not hijack scroll when user scrolled up, while sending scrolls to bottom', async ({ page }) => {
+    await page.clock.install();
+
+    const manyMessages = Array.from({ length: 25 }, (_, idx) => ({
+      id: `bundle-hist-${idx}`,
+      conversation_peer: 'dtn://f4jxq/chat',
+      sender_eid: idx % 2 === 0 ? 'dtn://stata/chat' : 'dtn://f4jxq/chat',
+      recipient_eid: idx % 2 === 0 ? 'dtn://f4jxq/chat' : 'dtn://stata/chat',
+      content: `History message number ${idx + 1}`,
+      direction: idx % 2 === 0 ? 'outbound' : 'inbound',
+      status: idx === 24 ? 'queued' : 'sent',
+      is_read: true,
+      timestamp: 1730764500000 + idx * 1000,
+      created_at: new Date(1730764500000 + idx * 1000).toISOString(),
+    }));
+
+    let pollNum = 0;
+    await page.route('**/api/chat/v1/messages**', async (route) => {
+      if (route.request().method() === 'GET') {
+        pollNum += 1;
+        // On 2nd poll, simulate status transition queued -> sent on last message
+        const payload =
+          pollNum >= 2
+            ? manyMessages.map((m, i) => (i === 24 ? { ...m, status: 'sent' } : m))
+            : manyMessages;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(payload),
+        });
+      } else if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON();
+        const sentMsg = {
+          id: 'bundle-new-bottom',
+          conversation_peer: body.peer,
+          sender_eid: 'dtn://stata/chat',
+          recipient_eid: body.peer,
+          content: body.content,
+          direction: 'outbound',
+          status: 'sent',
+          is_read: true,
+          timestamp: Date.now(),
+          created_at: new Date().toISOString(),
+        };
+        manyMessages.push(sentMsg);
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(sentMsg),
+        });
+      }
+    });
+
+    await page.locator('header nav button', { hasText: 'Chat' }).click();
+    await expect(page.locator('text=History message number 25')).toBeVisible();
+
+    // Wait for initial auto-scroll to settle at bottom before installing spy & scrolling up
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const el = document.querySelector('div.overflow-y-auto.space-y-3') as HTMLElement;
+          return el ? el.scrollHeight - el.scrollTop - el.clientHeight : 999;
+        })
+      )
+      .toBeLessThanOrEqual(20);
+
+    // Spy on scrollIntoView calls and scroll up to the very top of the thread
+    const initialScrollTop = await page.evaluate(() => {
+      (window as any).__scrollIntoViewCalls = 0;
+      const orig = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (...args: any[]) {
+        (window as any).__scrollIntoViewCalls += 1;
+        return orig.apply(this, args as any);
+      };
+      const el = document.querySelector('div.overflow-y-auto.space-y-3') as HTMLElement;
+      el.scrollTop = 0;
+      return el.scrollTop;
+    });
+    expect(initialScrollTop).toBe(0);
+
+    // Trigger 4s background poll (status update queued -> sent, no new messages) and wait for response
+    const pollResp = page.waitForResponse(
+      (res) => res.url().includes('/api/chat/v1/messages') && res.request().method() === 'GET'
+    );
+    await page.clock.runFor(4100);
+    await pollResp;
+    await page.clock.runFor(100);
+
+    // Background poll must NOT call scrollIntoView or snap scrollTop away from top
+    const scrollCallsAfterPoll = await page.evaluate(() => (window as any).__scrollIntoViewCalls);
+    expect(scrollCallsAfterPoll).toBe(0);
+    const scrollAfterPoll = await page.evaluate(() => {
+      const el = document.querySelector('div.overflow-y-auto.space-y-3') as HTMLElement;
+      return el.scrollTop;
+    });
+    expect(scrollAfterPoll).toBe(0);
+
+    // Now send a new message — should scroll to bottom to show the sent message
+    const textarea = page.locator('textarea[placeholder*="dtn://f4jxq/chat"]');
+    await textarea.fill('Back to bottom on send');
+    await page.locator('button[type="submit"]', { hasText: 'Send' }).click();
+    await expect(page.locator('text=Back to bottom on send')).toBeVisible();
+
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const el = document.querySelector('div.overflow-y-auto.space-y-3') as HTMLElement;
+          return el.scrollHeight - el.scrollTop - el.clientHeight;
+        })
+      )
+      .toBeLessThanOrEqual(20);
+  });
 });

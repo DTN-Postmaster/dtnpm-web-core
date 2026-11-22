@@ -101,8 +101,75 @@ export function ChatView({
   const [newChatInput, setNewChatInput] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const activePeerRef = useRef<string | null>(null);
+  const messagesEpochRef = useRef(0);
+  const pollAbortRef = useRef<AbortController | null>(null);
+  const recentlySentRef = useRef<Map<string, number>>(new Map());
+  const scrollModeRef = useRef<'none' | 'auto' | 'smooth'>('auto');
+
+  const isNearBottom = (el: HTMLElement | null): boolean => {
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= 100;
+  };
+
+  const messagesEqual = (a: ChatMessage[], b: ChatMessage[]): boolean => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      const x = a[i];
+      const y = b[i];
+      if (
+        x.id !== y.id ||
+        x.status !== y.status ||
+        x.is_read !== y.is_read ||
+        x.is_sticky !== y.is_sticky ||
+        x.content !== y.content ||
+        x.auth_status !== y.auth_status ||
+        x.expiry_timestamp !== y.expiry_timestamp
+      ) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const reconcileMessages = (prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] => {
+    const now = Date.now();
+    const seen = new Set<string>();
+    const next: ChatMessage[] = [];
+
+    for (const msg of incoming) {
+      if (!seen.has(msg.id)) {
+        seen.add(msg.id);
+        next.push(msg);
+        recentlySentRef.current.delete(msg.id);
+      }
+    }
+
+    for (const [id, expiresAt] of recentlySentRef.current.entries()) {
+      if (now > expiresAt) {
+        recentlySentRef.current.delete(id);
+      }
+    }
+
+    for (const msg of prev) {
+      if (!seen.has(msg.id) && recentlySentRef.current.has(msg.id)) {
+        seen.add(msg.id);
+        next.push(msg);
+      }
+    }
+
+    if (messagesEqual(prev, next)) {
+      return prev;
+    }
+
+    if (next.length > prev.length && isNearBottom(messagesContainerRef.current)) {
+      scrollModeRef.current = 'smooth';
+    }
+    return next;
+  };
 
   // Fetch all conversation summaries
   const fetchConversations = async (keepSelection?: string) => {
@@ -132,14 +199,19 @@ export function ChatView({
 
   // Fetch message history for a peer
   const fetchMessages = async (peer: string) => {
+    const reqEpoch = ++messagesEpochRef.current;
+    pollAbortRef.current?.abort();
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/chat/v1/messages?peer=${encodeURIComponent(peer)}`);
       if (res.ok) {
         const data = await res.json();
+        if (reqEpoch !== messagesEpochRef.current || activePeerRef.current !== peer) {
+          return;
+        }
         if (Array.isArray(data)) {
-          setMessages(data);
+          setMessages((prev) => reconcileMessages(prev, data));
         }
 
         // Mark as read immediately on viewing (ignore if offline)
@@ -158,6 +230,7 @@ export function ChatView({
         throw new Error(errJson.error || `HTTP ${res.status}`);
       }
     } catch (e: any) {
+      if (e?.name === 'AbortError') return;
       setError(e.message || 'Failed to load conversation history');
     } finally {
       setLoading(false);
@@ -166,6 +239,10 @@ export function ChatView({
 
   // Select a conversation thread
   const selectConversation = (peer: string) => {
+    activePeerRef.current = peer;
+    messagesEpochRef.current += 1;
+    pollAbortRef.current?.abort();
+    scrollModeRef.current = 'auto';
     setSelectedPeer(peer);
     fetchMessages(peer);
   };
@@ -193,6 +270,9 @@ export function ChatView({
       setMessages((prev) => {
         // avoid duplicate if already present
         if (prev.some((m) => m.id === msg.id)) return prev;
+        if (isNearBottom(messagesContainerRef.current)) {
+          scrollModeRef.current = 'smooth';
+        }
         return [...prev, msg];
       });
 
@@ -212,23 +292,39 @@ export function ChatView({
     const timer = setInterval(() => {
       fetchConversations(selectedPeer || undefined);
       if (selectedPeer) {
-        fetch(`/api/chat/v1/messages?peer=${encodeURIComponent(selectedPeer)}`)
+        const reqEpoch = messagesEpochRef.current;
+        const reqPeer = selectedPeer;
+        pollAbortRef.current?.abort();
+        const controller = new AbortController();
+        pollAbortRef.current = controller;
+
+        fetch(`/api/chat/v1/messages?peer=${encodeURIComponent(reqPeer)}`, {
+          signal: controller.signal,
+        })
           .then((res) => (res.ok ? res.json() : null))
           .then((data: ChatMessage[] | null) => {
-            if (data) {
-              setMessages(data);
+            if (!Array.isArray(data)) return;
+            if (reqEpoch !== messagesEpochRef.current || activePeerRef.current !== reqPeer) {
+              return;
             }
+            setMessages((prev) => reconcileMessages(prev, data));
           })
           .catch(() => {});
       }
     }, 4000);
 
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      pollAbortRef.current?.abort();
+    };
   }, [selectedPeer]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom only when explicitly requested (initial load, send, or near-bottom new message)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const mode = scrollModeRef.current;
+    if (mode === 'none' || messages.length === 0) return;
+    scrollModeRef.current = 'none';
+    messagesEndRef.current?.scrollIntoView({ behavior: mode });
   }, [messages]);
 
   // Escape key closes modal
@@ -250,6 +346,8 @@ export function ChatView({
 
     setSending(true);
     setError(null);
+    messagesEpochRef.current += 1;
+    pollAbortRef.current?.abort();
 
     try {
       const lifetimeSecs = parseInt(lifetime, 10);
@@ -271,7 +369,11 @@ export function ChatView({
       }
 
       const sentMsg: ChatMessage = await res.json();
-      setMessages((prev) => [...prev, sentMsg]);
+      messagesEpochRef.current += 1;
+      pollAbortRef.current?.abort();
+      recentlySentRef.current.set(sentMsg.id, Date.now() + 10_000);
+      scrollModeRef.current = 'smooth';
+      setMessages((prev) => (prev.some((m) => m.id === sentMsg.id) ? prev : [...prev, sentMsg]));
       setInputText('');
 
       // Refresh list to show latest snippet
@@ -489,7 +591,10 @@ export function ChatView({
               )}
 
               {/* Messages Bubble Thread */}
-              <div class="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-100/40 dark:bg-slate-900/40">
+              <div
+                ref={messagesContainerRef}
+                class="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-100/40 dark:bg-slate-900/40"
+              >
                 {loading && messages.length === 0 ? (
                   <div class="flex justify-center items-center h-full text-slate-400 text-sm">
                     <span>Loading conversation...</span>
