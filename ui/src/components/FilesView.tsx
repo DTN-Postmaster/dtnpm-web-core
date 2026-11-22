@@ -17,6 +17,9 @@ export interface FileBundleRecord {
   is_read: boolean;
   created_at: string;
   auth_status?: string;
+  delivery_status?: string;
+  delivery_reason?: number;
+  delivery_updated_at?: number;
 }
 
 export interface FileDetailResponse {

@@ -165,6 +165,11 @@ async fn build_and_inject_bundle(
 
     let lifetime = std::time::Duration::from_secs(lifetime_secs.unwrap_or(3600));
     let payload_len = payload_bytes.len();
+    let is_chat_sender = matches!(
+        &source_eid,
+        Eid::Dtn { service_name, .. } if service_name.as_ref() == "chat"
+    );
+    let chat_content = is_chat_sender.then(|| String::from_utf8_lossy(&payload_bytes).to_string());
 
     let mut builder = Builder::new(source_eid.clone(), destination_eid.clone())
         .with_payload(payload_bytes.into())
@@ -187,22 +192,24 @@ async fn build_and_inject_bundle(
     })?;
 
     let dest_str = destination_eid.to_string();
-    let binbundle_vec = if let Some(key) = state.keystore.find_outbound_key(&dest_str) {
+    let (binbundle_vec, auth_status) = if let Some(key) =
+        state.keystore.find_outbound_key(&dest_str)
+    {
         tracing::info!(
             "Signing bundle with BPSec BIB key pattern '{}'",
             key.pattern
         );
-        dtnpm_core::security::sign_bundle_with_key(&bundle, &binbundle, &key, None).map_err(
-            |e| {
+        let signed = dtnpm_core::security::sign_bundle_with_key(&bundle, &binbundle, &key, None)
+            .map_err(|e| {
                 tracing::error!("BPSec BIB signing failed for destination '{dest_str}': {e}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to sign bundle with BPSec key: {e}"),
                 )
-            },
-        )?
+            })?;
+        (signed, "valid".to_string())
     } else {
-        binbundle.into_vec()
+        (binbundle.into_vec(), "unsigned".to_string())
     };
 
     let bundle_id = bundle.primary.id.to_key();
@@ -226,6 +233,50 @@ async fn build_and_inject_bundle(
     })?;
 
     tracing::info!("Bundle {} injected successfully into BPA", bundle_id);
+
+    if let Some(content) = chat_content {
+        let dt = bundle
+            .primary
+            .id
+            .timestamp
+            .as_datetime()
+            .unwrap_or_else(time::OffsetDateTime::now_utc);
+        let created_at = dt
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| dt.to_string());
+        let timestamp = i64::try_from(dt.unix_timestamp_nanos() / 1_000_000).unwrap_or(0);
+        let clamped_secs = bundle.primary.lifetime.as_secs().min(365 * 86_400);
+        let expiry_timestamp = timestamp.saturating_add(
+            i64::try_from(clamped_secs)
+                .unwrap_or(i64::MAX)
+                .saturating_mul(1000),
+        );
+        let conversation_peer = dtnpm_core::internal_storage::normalize_chat_target(&dest_str);
+
+        let message = dtnpm_core::internal_storage::ChatMessage {
+            id: bundle_id.clone(),
+            conversation_peer,
+            sender_eid: source_eid.to_string(),
+            recipient_eid: dest_str,
+            content,
+            direction: "outbound".to_string(),
+            status: "sent".to_string(),
+            is_read: true,
+            is_sticky: false,
+            timestamp,
+            expiry_timestamp,
+            created_at,
+            auth_status,
+            delivery_status: None,
+            delivery_reason: None,
+            delivery_updated_at: None,
+        };
+        if let Err(err) = state.internal_storage.insert_message(&message) {
+            tracing::warn!("Failed to store generic-sender outbound chat message: {err}");
+        } else {
+            state.service_tracker.broadcast_chat_message(message);
+        }
+    }
 
     // Allow BPA async dispatch loop to write the bundle to storage before notifying clients
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -557,5 +608,87 @@ pub async fn delete_bundle_handler(
             )
                 .into_response()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dtnpm_core::service_tracker::ServiceEvent;
+    use serde_json::json;
+
+    use crate::TestServerBuilder;
+
+    #[tokio::test]
+    async fn generic_sender_with_chat_source_records_and_broadcasts_chat_message() {
+        let srv = TestServerBuilder::new()
+            .node_id("dtn://stata/")
+            .callsign("STATA")
+            .build()
+            .await
+            .expect("test server");
+
+        let mut rx = srv.ctx.service_tracker.subscribe();
+
+        // 1. Generic sender with sender EID ending in /chat -> recorded as outbound ChatMessage + SSE
+        let res = srv
+            .post_json(
+                "/api/v1/bundles",
+                json!({
+                    "source": "dtn://stata/chat",
+                    "destination": "dtn://statb/chat",
+                    "payload": "hello via generic sender",
+                    "status_reports": true
+                }),
+            )
+            .await;
+        assert_eq!(res.status(), axum::http::StatusCode::CREATED);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let json_res: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let bundle_id = json_res["bundle_id"].as_str().unwrap().to_string();
+
+        let msgs = srv
+            .ctx
+            .internal_storage
+            .get_conversation_messages("dtn://statb/chat")
+            .unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].id, bundle_id);
+        assert_eq!(msgs[0].sender_eid, "dtn://stata/chat");
+        assert_eq!(msgs[0].recipient_eid, "dtn://statb/chat");
+        assert_eq!(msgs[0].content, "hello via generic sender");
+        assert_eq!(msgs[0].direction, "outbound");
+        assert_eq!(msgs[0].status, "sent");
+
+        let mut saw_chat_event = false;
+        while let Ok(ev) = rx.try_recv() {
+            if let ServiceEvent::ChatMessage { message } = ev
+                && message["id"] == bundle_id
+            {
+                saw_chat_event = true;
+            }
+        }
+        assert!(saw_chat_event, "expected ServiceEvent::ChatMessage on SSE");
+
+        // 2. Non-/chat sender EID (e.g. /files) -> must NOT record in chat_messages
+        let res2 = srv
+            .post_json(
+                "/api/v1/bundles",
+                json!({
+                    "source": "dtn://stata/files",
+                    "destination": "dtn://statb/chat",
+                    "payload": "file payload"
+                }),
+            )
+            .await;
+        assert_eq!(res2.status(), axum::http::StatusCode::CREATED);
+
+        let msgs_after = srv
+            .ctx
+            .internal_storage
+            .get_conversation_messages("dtn://statb/chat")
+            .unwrap();
+        assert_eq!(msgs_after.len(), 1);
     }
 }

@@ -17,6 +17,9 @@ export interface ChatMessage {
   expiry_timestamp?: number;
   created_at: string;
   auth_status?: string;
+  delivery_status?: 'received' | 'forwarded' | 'delivered' | 'deleted';
+  delivery_reason?: number;
+  delivery_updated_at?: number;
 }
 
 export interface ConversationSummary {
@@ -127,7 +130,9 @@ export function ChatView({
         x.is_sticky !== y.is_sticky ||
         x.content !== y.content ||
         x.auth_status !== y.auth_status ||
-        x.expiry_timestamp !== y.expiry_timestamp
+        x.expiry_timestamp !== y.expiry_timestamp ||
+        x.delivery_status !== y.delivery_status ||
+        x.delivery_updated_at !== y.delivery_updated_at
       ) {
         return false;
       }
@@ -268,8 +273,10 @@ export function ChatView({
         normalizeChatTarget(msg.sender_eid) === normSelected)
     ) {
       setMessages((prev) => {
-        // avoid duplicate if already present
-        if (prev.some((m) => m.id === msg.id)) return prev;
+        // Update existing message in place (e.g., live delivery receipt via SSE)
+        if (prev.some((m) => m.id === msg.id)) {
+          return prev.map((m) => (m.id === msg.id ? msg : m));
+        }
         if (isNearBottom(messagesContainerRef.current)) {
           scrollModeRef.current = 'smooth';
         }
@@ -661,12 +668,24 @@ export function ChatView({
                             {isOutbound && (
                               <span
                                 title={
-                                  m.status === 'queued'
+                                  m.delivery_status
+                                    ? `RFC 9171 status: ${m.delivery_status}${m.delivery_reason !== undefined ? ` (reason ${m.delivery_reason})` : ''}`
+                                    : m.status === 'queued'
                                     ? '⏳ Queued in local BPA Outbox (awaiting contact window or active session)'
                                     : '📤 Sent'
                                 }
                               >
-                                {m.status === 'queued' ? '⏳' : '📤'}
+                                {m.delivery_status === 'delivered'
+                                  ? '✓✓'
+                                  : m.delivery_status === 'forwarded'
+                                  ? '↗'
+                                  : m.delivery_status === 'received'
+                                  ? '✓'
+                                  : m.delivery_status === 'deleted'
+                                  ? '✕'
+                                  : m.status === 'queued'
+                                  ? '⏳'
+                                  : '📤'}
                               </span>
                             )}
                           </div>
