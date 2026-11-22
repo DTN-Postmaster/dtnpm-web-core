@@ -109,6 +109,7 @@ test.describe('Bundle Storage Inspector & Multi-Format Viewer', () => {
 
   test('displays correct navbar tabs order: Station -> Chat -> Files -> SenML -> Send Bundle', async ({ page }) => {
     const navButtons = page.locator('header nav button');
+    await expect(navButtons).toHaveCount(5);
     await expect(navButtons.nth(0)).toContainText('Station');
     await expect(navButtons.nth(1)).toContainText('Chat');
     await expect(navButtons.nth(2)).toContainText('Files');
@@ -119,7 +120,7 @@ test.describe('Bundle Storage Inspector & Multi-Format Viewer', () => {
   test('navigates to Bundles tab and renders bundle storage table', async ({ page }) => {
     // Click Station then Bundles sub-tab
     await page.locator('header nav button:has-text("Station")').click();
-    await page.locator('button:has-text("Stockage & Paquets")').click();
+    await page.locator('button:has-text("Storage & Bundles")').click();
 
     // Check title
     await expect(page.locator('h1')).toContainText('Bundle Storage Inspector');

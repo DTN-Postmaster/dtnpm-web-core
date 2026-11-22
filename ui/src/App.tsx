@@ -7,7 +7,6 @@ import { SendBundleView } from './components/SendBundleView';
 import { ChatView, ChatMessage } from './components/ChatView';
 import { FilesView } from './components/FilesView';
 import { SenmlView } from './components/SenmlView';
-import { RegoRoutingView } from './components/RegoRoutingView';
 import { LogRecord } from './components/LogsView';
 import { playChime } from './utils/audio';
 import {
@@ -51,7 +50,7 @@ function parseHash(hash: string): {
   } else if (head === 'senml') {
     return { tab: 'senml', fileId: null, destination };
   } else if (head === 'rego_routing') {
-    return { tab: 'rego_routing', fileId: null, destination };
+    return { tab: 'station', stationSubTab: 'rego_routing', fileId: null, destination };
   } else if (head === 'send') {
     return { tab: 'send', fileId: null, destination };
   } else if (head === 'bundles') {
@@ -59,8 +58,9 @@ function parseHash(hash: string): {
   } else if (head === 'logs') {
     return { tab: 'station', stationSubTab: 'logs', fileId: null, destination };
   } else if (head === 'station' || head === 'config') {
-    const validSubTabs: StationSubTab[] = ['radio', 'routes', 'security', 'bundles', 'logs', 'advanced'];
-    const sub = segments[1] as StationSubTab;
+    const validSubTabs: StationSubTab[] = ['radio', 'routes', 'rego_routing', 'security', 'bundles', 'logs', 'advanced'];
+    const rawSub = segments[1] === 'rego' ? 'rego_routing' : segments[1];
+    const sub = rawSub as StationSubTab;
     const stationSubTab: StationSubTab = validSubTabs.includes(sub) ? sub : 'radio';
     return { tab: 'station', stationSubTab, fileId: null, destination };
   }
@@ -126,7 +126,7 @@ export function App() {
         setNotifEnabled(true);
         persistNotificationEnabled(true);
         sendWebNotification('Hardy Ham DTN', {
-          body: 'Notifications activées pour les alertes et messages de chat.',
+          body: 'Notifications enabled for alerts and chat messages.',
         });
       }
     } else if (notifPermission === 'granted') {
@@ -406,7 +406,7 @@ export function App() {
             sendWebNotification(
               `[DTN Chat] ${msg.source}`,
               {
-                body: msg.text || 'Nouveau message reçu',
+                body: msg.text || 'New message received',
                 tag: `dtn-chat-${msg.source}`,
               },
               () => navigateToTab('chat')
@@ -500,7 +500,7 @@ export function App() {
       {!isOnline && (
         <div class="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-semibold text-center flex items-center justify-center space-x-2 shadow-sm">
           <span>📡</span>
-          <span>Mode hors-ligne actif — Consultation locale des messages et fichiers mis en cache.</span>
+          <span>Offline mode active — Viewing locally cached messages and files.</span>
         </div>
       )}
 
@@ -509,13 +509,13 @@ export function App() {
         <div class="bg-emerald-600 text-white px-4 py-2 text-xs font-semibold flex items-center justify-between shadow-md">
           <div class="flex items-center space-x-2">
             <span>⚡</span>
-            <span>Une nouvelle version de l'application est disponible.</span>
+            <span>A new version of the application is available.</span>
           </div>
           <button
             onClick={applyPwaUpdate}
             class="px-3 py-1 bg-white text-emerald-800 rounded text-xs font-bold hover:bg-emerald-50 transition-colors shadow-xs"
           >
-            Mettre à jour
+            Update
           </button>
         </div>
       )}
@@ -525,7 +525,7 @@ export function App() {
         <div class="bg-amber-600 text-white px-4 py-2 text-xs font-semibold text-center flex items-center justify-center space-x-2 shadow-sm">
           <span>🔒</span>
           <span>
-            Authentification SSO requise : aucun en-tête d&apos;identité de proxy approuvé détecté. Accès lecture seule / anonyme restreint.
+            SSO authentication required: no trusted proxy identity header detected. Read-only / anonymous access restricted.
           </span>
         </div>
       )}
@@ -583,6 +583,7 @@ export function App() {
             incomingLog={incomingLog}
             sseStatus={sseStatus}
             canManageAdmin={authState?.capabilities?.can_manage_clas ?? true}
+            enabledModules={enabledModules}
           />
         ) : activeTab === 'chat' ? (
           <ChatView
@@ -603,8 +604,6 @@ export function App() {
           />
         ) : activeTab === 'senml' ? (
           <SenmlView />
-        ) : activeTab === 'rego_routing' ? (
-          <RegoRoutingView />
         ) : (
           <SendBundleView
             stationNodeId={config?.node_id}

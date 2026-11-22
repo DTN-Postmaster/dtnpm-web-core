@@ -109,15 +109,15 @@ test.describe('PWA & Field Mobile Ergonomics', () => {
 
     await page.goto('/');
 
-    // Notification button initially present with 'Activer les notifications'
-    const notifBtn = page.getByRole('button', { name: /Activer les notifications système/i });
+    // Notification button initially present with 'Enable system notifications'
+    const notifBtn = page.getByRole('button', { name: /Enable system notifications/i });
     await expect(notifBtn).toBeVisible();
 
     // Click to request permission and enable
     await notifBtn.click();
 
-    // Now button switches to 'Désactiver les notifications'
-    const disableBtn = page.getByRole('button', { name: /Désactiver les notifications système/i });
+    // Now button switches to 'Disable system notifications'
+    const disableBtn = page.getByRole('button', { name: /Disable system notifications/i });
     await expect(disableBtn).toBeVisible();
   });
 
@@ -130,7 +130,7 @@ test.describe('PWA & Field Mobile Ergonomics', () => {
     });
 
     await expect(
-      page.getByText(/Mode hors-ligne actif/i)
+      page.getByText(/Offline mode active/i)
     ).toBeVisible();
 
     // Simulate recovery to online
@@ -139,7 +139,7 @@ test.describe('PWA & Field Mobile Ergonomics', () => {
     });
 
     await expect(
-      page.getByText(/Mode hors-ligne actif/i)
+      page.getByText(/Offline mode active/i)
     ).not.toBeVisible();
   });
 
@@ -154,7 +154,7 @@ test.describe('PWA & Field Mobile Ergonomics', () => {
       window.dispatchEvent(event);
     });
 
-    const installBtn = page.getByRole('button', { name: /Installer/i });
+    const installBtn = page.getByRole('button', { name: /Install/i });
     await expect(installBtn).toBeVisible();
   });
 });

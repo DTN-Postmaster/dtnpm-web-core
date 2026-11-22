@@ -140,8 +140,8 @@ test.describe('Station Overview & Identity', () => {
     await expect(page.getByText('tcp-f4jxq', { exact: true })).toBeVisible();
     await expect(page.getByText('mercury-kiss', { exact: true })).toBeVisible();
 
-    // Check routes are listed in Routage sub-tab
-    await page.getByRole('button', { name: /Routage/i }).click();
+    // Check routes are listed in Routing (RIB) sub-tab
+    await page.getByRole('button', { name: /Routing \(RIB\)/i }).click();
     await expect(page.getByText('dtn://f4jxq/*', { exact: true })).toBeVisible();
     await expect(page.getByText('dtn://*', { exact: true })).toBeVisible();
   });
@@ -274,8 +274,8 @@ test.describe('Station Overview & Identity', () => {
     // Check connected status badge is displayed
     await expect(page.getByText('connected', { exact: true })).toBeVisible();
 
-    // Switch to Routage sub-tab
-    await page.getByRole('button', { name: /Routage/i }).click();
+    // Switch to Routing (RIB) sub-tab
+    await page.getByRole('button', { name: /Routing \(RIB\)/i }).click();
 
     // Click "+ Add Route" button
     await page.getByRole('button', { name: '+ Add Route' }).click();
@@ -306,7 +306,46 @@ test.describe('Station Overview & Identity', () => {
     await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
   });
 
-  test('navigates across all 6 station sub-tabs via segmented navigation bar', async ({ page }) => {
+  test('navigates across all 7 station sub-tabs via segmented navigation bar and excludes Rego Routing from global navbar', async ({ page }) => {
+    await page.route('**/api/capabilities', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ modules: ['chat', 'files', 'senml', 'rego_routing'] }),
+      });
+    });
+    await page.route('**/api/rego_routing/v1/blacklist', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/api/rego_routing/v1/policy', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          config: {
+            local_eid: 'dtn://f4jxq/',
+            node_eids: ['dtn://f4jxq/'],
+            is_digipeater: false,
+            supported_aliases: [],
+            trapped_aliases: [],
+            hop_limit: 16,
+            treb_block_type: 201,
+            record_treb: true,
+            active_profile: 'default',
+          },
+          sources: {
+            constants: 'package dtn.constants',
+            helpers: 'package dtn.helpers',
+            ingress: 'package dtn.ingress',
+            egress: 'package dtn.egress',
+            routing: 'package dtn.routing',
+          },
+        }),
+      });
+    });
+    await page.route('**/api/rego_routing/v1/decisions', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
     // Route for Bundles view when embedded
     await page.route('**/api/v1/bundles*', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
@@ -318,35 +357,93 @@ test.describe('Station Overview & Identity', () => {
 
     await page.goto('/');
 
+    // Rego Routing must NOT appear in the top-level global navbar
+    const globalNav = page.locator('header nav');
+    await expect(globalNav.getByRole('button', { name: /Rego/i })).toHaveCount(0);
+
     const subNav = page.locator('nav[aria-label="Station management sub-navigation"]');
     await expect(subNav).toBeVisible();
 
-    // 1. Radio (default)
+    // Verify exact order of the 7 Station sub-tabs (Rego Routing between Routing (RIB) and BPSec Security)
+    const subButtons = subNav.locator('button');
+    await expect(subButtons).toHaveCount(7);
+    await expect(subButtons.nth(0)).toContainText('Links & Radio');
+    await expect(subButtons.nth(1)).toContainText('Routing (RIB)');
+    await expect(subButtons.nth(2)).toContainText('Rego Routing');
+    await expect(subButtons.nth(3)).toContainText('BPSec Security');
+    await expect(subButtons.nth(4)).toContainText('Storage & Bundles');
+    await expect(subButtons.nth(5)).toContainText('Logs & Diagnostics');
+    await expect(subButtons.nth(6)).toContainText('JSON Config');
+
+    // 1. Links & Radio (default)
     await expect(page.getByText('Radio Identity')).toBeVisible();
 
-    // 2. Routage (RIB)
-    await subNav.getByRole('button', { name: /Routage/i }).click();
+    // 2. Routing (RIB)
+    await subNav.getByRole('button', { name: /Routing \(RIB\)/i }).click();
     await expect(page.getByRole('heading', { name: 'Static Routes' })).toBeVisible();
 
-    // 3. Sécurité BPSec
-    await subNav.getByRole('button', { name: /Sécurité/i }).click();
-    await expect(page.getByText('Sécurité & Authentification BPSec')).toBeVisible();
+    // 3. Rego Routing
+    await subNav.getByRole('button', { name: 'Rego Routing' }).click();
+    await expect(page.getByRole('heading', { name: 'OPA / Rego Routing & Filtering' })).toBeVisible();
 
-    // 4. Stockage & Paquets (Bundles)
-    await subNav.getByRole('button', { name: /Stockage/i }).click();
+    // 4. BPSec Security
+    await subNav.getByRole('button', { name: /BPSec Security/i }).click();
+    await expect(page.getByText('BPSec Security & Authentication')).toBeVisible();
+
+    // 5. Storage & Bundles
+    await subNav.getByRole('button', { name: /Storage & Bundles/i }).click();
     await expect(page.locator('h1')).toContainText('Bundle Storage Inspector');
 
-    // 5. Traces & Diagnostic (Logs)
-    await subNav.getByRole('button', { name: /Traces/i }).click();
+    // 6. Logs & Diagnostics
+    await subNav.getByRole('button', { name: /Logs & Diagnostics/i }).click();
     await expect(page.getByRole('heading', { name: /System Log Console/i })).toBeVisible();
 
-    // 6. Configuration JSON
-    await subNav.getByRole('button', { name: /JSON/i }).click();
-    await expect(page.getByRole('heading', { name: 'Configuration JSON de la station' })).toBeVisible();
+    // 7. JSON Config
+    await subNav.getByRole('button', { name: /JSON Config/i }).click();
+    await expect(page.getByRole('heading', { name: 'Station JSON Configuration' })).toBeVisible();
     await expect(page.locator('pre')).toBeVisible();
   });
 
   test('deep-links to station sub-tabs and handles backward-compatible aliases', async ({ page }) => {
+    await page.route('**/api/capabilities', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ modules: ['chat', 'files', 'senml', 'rego_routing'] }),
+      });
+    });
+    await page.route('**/api/rego_routing/v1/blacklist', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/api/rego_routing/v1/policy', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          config: {
+            local_eid: 'dtn://f4jxq/',
+            node_eids: ['dtn://f4jxq/'],
+            is_digipeater: false,
+            supported_aliases: [],
+            trapped_aliases: [],
+            hop_limit: 16,
+            treb_block_type: 201,
+            record_treb: true,
+            active_profile: 'default',
+          },
+          sources: {
+            constants: 'package dtn.constants',
+            helpers: 'package dtn.helpers',
+            ingress: 'package dtn.ingress',
+            egress: 'package dtn.egress',
+            routing: 'package dtn.routing',
+          },
+        }),
+      });
+    });
+    await page.route('**/api/rego_routing/v1/decisions', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
     // Route for Bundles view when embedded
     await page.route('**/api/v1/bundles*', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
@@ -359,6 +456,14 @@ test.describe('Station Overview & Identity', () => {
     // Test direct deep link to routes
     await page.goto('/#/station/routes');
     await expect(page.getByRole('heading', { name: 'Static Routes' })).toBeVisible();
+
+    // Test direct deep link to rego_routing sub-tab
+    await page.goto('/#/station/rego_routing');
+    await expect(page.getByRole('heading', { name: 'OPA / Rego Routing & Filtering' })).toBeVisible();
+
+    // Test backward-compatible alias #/rego_routing -> Station / Rego Routing
+    await page.goto('/#/rego_routing');
+    await expect(page.getByRole('heading', { name: 'OPA / Rego Routing & Filtering' })).toBeVisible();
 
     // Test backward-compatible alias #/bundles -> Station / Bundles
     await page.goto('/#/bundles');

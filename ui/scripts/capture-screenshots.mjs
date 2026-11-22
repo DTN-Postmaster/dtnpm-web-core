@@ -290,6 +290,7 @@ const mockRegoPolicy = {
     helpers: 'package dtn.helpers\nimport rego.v1\n',
     ingress: 'package dtn.ingress\nimport rego.v1\ndefault decision := {"action": "ACCEPT"}\n',
     egress: 'package dtn.egress\nimport rego.v1\ndefault decision := {"action": "ALLOW"}\n',
+    routing: 'package dtn.routing\nimport rego.v1\ndefault routes := []\n',
   },
 };
 
@@ -478,7 +479,7 @@ async function main() {
       path.join(DESTS.orgProfile, 'senml.png'),
     ]);
 
-    await capture('#/rego_routing', 'text=dtn://spam-node/**', [
+    await capture('#/station/rego_routing', 'text=dtn://spam-node/**', [
       path.join(DESTS.rego, 'rego-routing.png'),
       path.join(DESTS.dtnpm, 'rego-routing.png'),
       path.join(DESTS.orgProfile, 'rego-routing.png'),

@@ -2,7 +2,7 @@ import { h } from 'preact';
 import { NotificationPermissionState } from '../utils/notifications';
 import { AuthState } from './LoginModal';
 
-export type NavTabId = 'station' | 'chat' | 'files' | 'senml' | 'rego_routing' | 'send';
+export type NavTabId = 'station' | 'chat' | 'files' | 'senml' | 'send';
 
 interface NavbarProps {
   activeTab: NavTabId | 'config' | 'bundles' | 'logs';
@@ -52,7 +52,6 @@ export function Navbar({
     { id: 'chat' as const, label: 'Chat', shortLabel: 'Chat', icon: '💬', count: unreadChatCount, moduleId: 'chat' },
     { id: 'files' as const, label: 'Files', shortLabel: 'Files', icon: '📁', count: unreadFilesCount, moduleId: 'files' },
     { id: 'senml' as const, label: 'SenML', shortLabel: 'SenML', icon: '📊', moduleId: 'senml' },
-    { id: 'rego_routing' as const, label: 'Rego Routing', shortLabel: 'Rego', icon: '🛡️', moduleId: 'rego_routing' },
     { id: 'send' as const, label: 'Send Bundle', shortLabel: 'Send', icon: '✉️' },
   ];
   const tabs = enabledModules
@@ -154,11 +153,11 @@ export function Navbar({
               <button
                 onClick={onInstall}
                 class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs flex items-center space-x-1 transition-colors"
-                title="Installer l'application sur cet appareil"
-                aria-label="Installer l'application PWA sur cet appareil"
+                title="Install app on this device"
+                aria-label="Install PWA on this device"
               >
                 <span>📲</span>
-                <span class="hidden sm:inline">Installer</span>
+                <span class="hidden sm:inline">Install</span>
               </button>
             )}
 
@@ -168,17 +167,17 @@ export function Navbar({
                 onClick={onToggleNotification}
                 title={
                   notificationPermission === 'denied'
-                    ? 'Notifications système bloquées par le navigateur (modifier dans les paramètres du site)'
+                    ? 'System notifications blocked by browser (change in site settings)'
                     : notificationEnabled
-                    ? 'Désactiver les notifications système en arrière-plan'
-                    : 'Activer les notifications système en arrière-plan'
+                    ? 'Disable background system notifications'
+                    : 'Enable background system notifications'
                 }
                 aria-label={
                   notificationPermission === 'denied'
-                    ? 'Notifications système bloquées'
+                    ? 'System notifications blocked'
                     : notificationEnabled
-                    ? 'Désactiver les notifications système'
-                    : 'Activer les notifications système'
+                    ? 'Disable system notifications'
+                    : 'Enable system notifications'
                 }
                 class={`p-2 rounded-lg transition-colors min-h-[48px] min-w-[48px] flex items-center justify-center ${
                   notificationPermission === 'denied'
@@ -219,8 +218,8 @@ export function Navbar({
                 {authState.auth_mode === 'local' && onLogout && (
                   <button
                     onClick={onLogout}
-                    title="Se déconnecter"
-                    aria-label="Se déconnecter"
+                    title="Sign out"
+                    aria-label="Sign out"
                     class="ml-1 pl-1.5 border-l border-slate-300 dark:border-slate-500 text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 cursor-pointer transition-colors"
                   >
                     🚪
@@ -266,7 +265,7 @@ export function Navbar({
               {tab.count !== undefined && tab.count > 0 && (
                 <span
                   class="absolute top-1 right-2 inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold leading-none text-white bg-emerald-600 rounded-full shadow-xs"
-                  aria-label={`${tab.count} non-lus`}
+                  aria-label={`${tab.count} unread`}
                 >
                   {tab.count}
                 </span>

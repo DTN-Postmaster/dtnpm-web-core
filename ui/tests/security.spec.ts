@@ -113,7 +113,7 @@ test.describe('BPSec Security & Authentication (RFC 9103 / RFC 9172)', () => {
     await page.goto('/#/station/security');
 
     // Check Security section title
-    await expect(page.locator('text=Sécurité & Authentification BPSec')).toBeVisible();
+    await expect(page.locator('text=BPSec Security & Authentication')).toBeVisible();
 
     // Verify Outbound key table has the outbound key
     await expect(page.locator('text=dtn://f4jxq/*')).toBeVisible();
@@ -127,19 +127,19 @@ test.describe('BPSec Security & Authentication (RFC 9103 / RFC 9172)', () => {
   test('allows changing verification policy', async ({ page }) => {
     await page.goto('/#/station/security');
 
-    const policySelect = page.locator('select').filter({ hasText: 'Avertissement' });
+    const policySelect = page.locator('select').filter({ hasText: 'Warn' });
     await expect(policySelect).toBeVisible();
 
     // Change to strict policy
     await policySelect.selectOption('strict');
-    await expect(page.locator('text=mise à jour en mode "STRICT"')).toBeVisible();
+    await expect(page.locator('text=updated to "STRICT"')).toBeVisible();
   });
 
   test('allows adding a new outbound BPSec key with random generator', async ({ page }) => {
     await page.goto('/#/station/security');
 
     // Open Add Key form
-    await page.click('button:has-text("+ Ajouter une clé")');
+    await page.click('button:has-text("+ Add Key")');
 
     // Click pattern preset
     await page.click('button:has-text("dtn://*/chat")');
@@ -148,10 +148,10 @@ test.describe('BPSec Security & Authentication (RFC 9103 / RFC 9172)', () => {
     await page.fill('input[placeholder*="Station F5KUV"]', 'Chat Global Outbound');
 
     // Click Random Secret Generator
-    await page.click('text=Générer aléatoire');
+    await page.click('text=Generate Random');
 
     // Submit form
-    await page.click('button:has-text("Enregistrer la clé")');
+    await page.click('button:has-text("Save Key")');
 
     // Verify new key is in the table
     await expect(page.locator('text=Chat Global Outbound')).toBeVisible();
@@ -250,8 +250,8 @@ test.describe('BPSec Security & Authentication (RFC 9103 / RFC 9172)', () => {
     await page.click('text=F4JXQ');
 
     // Verify all 3 trust badges render in messages
-    await expect(page.locator('span[aria-label="Authentifié"]').first()).toBeVisible();
-    await expect(page.locator('span[aria-label="Signature Invalide"]').first()).toBeVisible();
-    await expect(page.locator('span[aria-label="Clé manquante"]').first()).toBeVisible();
+    await expect(page.locator('span[aria-label="Authenticated"]').first()).toBeVisible();
+    await expect(page.locator('span[aria-label="Invalid Signature"]').first()).toBeVisible();
+    await expect(page.locator('span[aria-label="Missing Key"]').first()).toBeVisible();
   });
 });

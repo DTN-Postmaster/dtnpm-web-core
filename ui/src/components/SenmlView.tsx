@@ -50,7 +50,7 @@ export function SenmlView() {
       const data: SenmlCard[] = await res.json();
       setCards(data);
     } catch (e: any) {
-      setError(e.message || 'Erreur lors du chargement des métriques');
+      setError(e.message || 'Failed to load telemetry metrics');
     } finally {
       setLoading(false);
     }
@@ -142,7 +142,7 @@ export function SenmlView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ label: editLabelValue.trim() || null }),
       });
-      if (!res.ok) throw new Error('Échec de la mise à jour du libellé');
+      if (!res.ok) throw new Error('Failed to update label');
       const updated: SenmlCard = await res.json();
       setCards((prev) =>
         prev.map((c) => (c.id === cardId ? { ...c, custom_label: updated.custom_label } : c))
@@ -190,14 +190,14 @@ export function SenmlView() {
 
   // Remove card from dashboard
   const handleRemoveCard = async (cardId: number) => {
-    if (!confirm('Retirer cette métrique du tableau de bord ? (Les données historiques restent conservées)')) {
+    if (!confirm('Remove this metric from the dashboard? (Historical data will be kept)')) {
       return;
     }
     try {
       const res = await fetch(`/api/senml/v1/dashboard/cards/${cardId}`, {
         method: 'DELETE',
       });
-      if (!res.ok) throw new Error('Échec de la suppression de la carte');
+      if (!res.ok) throw new Error('Failed to remove card');
       setCards((prev) => prev.filter((c) => c.id !== cardId));
     } catch (err: any) {
       alert(err.message);
@@ -206,14 +206,14 @@ export function SenmlView() {
 
   // Clear all cards
   const handleClearAll = async () => {
-    if (!confirm('Supprimer toutes les cartes du tableau de bord ?')) {
+    if (!confirm('Remove all cards from the dashboard?')) {
       return;
     }
     try {
       const res = await fetch('/api/senml/v1/dashboard/cards', {
         method: 'DELETE',
       });
-      if (!res.ok) throw new Error('Échec de la réinitialisation du dashboard');
+      if (!res.ok) throw new Error('Failed to reset dashboard');
       setCards([]);
     } catch (err: any) {
       alert(err.message);
@@ -225,7 +225,7 @@ export function SenmlView() {
     e.preventDefault();
     const finalName = customMetricName.trim() || selectedMetricName.trim();
     if (!finalName) {
-      alert('Veuillez sélectionner ou renseigner un nom de métrique');
+      alert('Please select or enter a metric name');
       return;
     }
 
@@ -242,7 +242,7 @@ export function SenmlView() {
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Erreur lors de l’ajout de la carte');
+        throw new Error(errJson.error || 'Failed to add card');
       }
 
       setIsAddModalOpen(false);
@@ -260,18 +260,18 @@ export function SenmlView() {
 
   // Helper to format timestamps relative to now
   const formatTimeAgo = (utcMs: number | null): string => {
-    if (!utcMs) return 'Aucune mesure';
+    if (!utcMs) return 'No readings';
     const now = Date.now();
     const diffSec = Math.floor((now - utcMs) / 1000);
 
-    if (diffSec < 5) return "à l'instant";
-    if (diffSec < 60) return `il y a ${diffSec}s`;
+    if (diffSec < 5) return 'just now';
+    if (diffSec < 60) return `${diffSec}s ago`;
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `il y a ${diffMin}m`;
+    if (diffMin < 60) return `${diffMin}m ago`;
     const diffHours = Math.floor(diffMin / 60);
-    if (diffHours < 24) return `il y a ${diffHours}h`;
+    if (diffHours < 24) return `${diffHours}h ago`;
     const diffDays = Math.floor(diffHours / 24);
-    return `il y a ${diffDays}j`;
+    return `${diffDays}d ago`;
   };
 
   // Format measurement value
@@ -292,13 +292,13 @@ export function SenmlView() {
         <div>
           <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <span>📊</span>
-            <span>Télémétrie SenML</span>
+            <span>SenML Telemetry</span>
             <span class="text-xs font-normal text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2.5 py-0.5 rounded-full">
               RFC 8428
             </span>
           </h1>
           <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Tableau de bord des mesures et capteurs IoT reçus par le service DTN local <code class="text-emerald-600 dark:text-emerald-400 font-mono">senml</code>.
+            Dashboard of IoT sensor readings received by the local DTN <code class="text-emerald-600 dark:text-emerald-400 font-mono">senml</code> service.
           </p>
         </div>
 
@@ -311,25 +311,25 @@ export function SenmlView() {
             class="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-xs transition-colors"
           >
             <span>➕</span>
-            <span>Ajouter une carte</span>
+            <span>Add Card</span>
           </button>
 
           {cards.length > 0 && (
             <button
               onClick={handleClearAll}
               class="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 dark:bg-slate-700 dark:hover:bg-rose-950/40 dark:text-slate-300 dark:hover:text-rose-400 text-xs sm:text-sm font-semibold rounded-lg border border-slate-200 dark:border-slate-600 transition-colors"
-              title="Vider le tableau de bord"
+              title="Clear dashboard"
             >
               <span>🗑️</span>
-              <span class="hidden sm:inline">Tout effacer</span>
+              <span class="hidden sm:inline">Clear All</span>
             </button>
           )}
 
           <button
             onClick={fetchDashboardCards}
             class="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-            title="Rafraîchir"
-            aria-label="Rafraîchir"
+            title="Refresh"
+            aria-label="Refresh"
           >
             🔄
           </button>
@@ -353,15 +353,15 @@ export function SenmlView() {
       {loading && cards.length === 0 ? (
         <div class="text-center py-16 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500">
           <div class="animate-spin inline-block w-8 h-8 border-4 border-current border-t-transparent text-emerald-600 rounded-full mb-3" />
-          <p class="text-sm font-medium">Chargement des données de télémétrie...</p>
+          <p class="text-sm font-medium">Loading telemetry data...</p>
         </div>
       ) : cards.length === 0 ? (
         /* Empty state */
         <div class="text-center py-16 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-8">
           <div class="text-4xl mb-3">📡</div>
-          <h3 class="text-base font-bold text-slate-900 dark:text-white">Aucune métrique sur le tableau de bord</h3>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">No metrics on dashboard</h3>
           <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto mt-1 mb-6">
-            Les mesures reçues sur le point d'accès <code class="font-mono">dtn://&lt;node&gt;/senml</code> sont enregistrées en base. Cliquez sur le bouton ci-dessous pour ajouter une carte à ce dashboard.
+            Measurements received on <code class="font-mono">dtn://&lt;node&gt;/senml</code> are stored in the database. Click the button below to add a card to this dashboard.
           </p>
           <button
             onClick={() => {
@@ -370,7 +370,7 @@ export function SenmlView() {
             }}
             class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm transition-colors shadow-xs"
           >
-            ➕ Ajouter une carte
+            ➕ Add Card
           </button>
         </div>
       ) : (
@@ -394,23 +394,23 @@ export function SenmlView() {
                         type="text"
                         value={editLabelValue}
                         onInput={(e) => setEditLabelValue((e.target as HTMLInputElement).value)}
-                        placeholder="Libellé personnalisé"
+                        placeholder="Custom label"
                         class="px-2 py-1 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full"
                         autoFocus
                       />
                       <button
                         onClick={() => handleSaveEdit(card.id)}
                         class="p-1 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
-                        title="Enregistrer"
-                        aria-label="Enregistrer"
+                        title="Save"
+                        aria-label="Save"
                       >
                         ✓
                       </button>
                       <button
                         onClick={() => setEditingCardId(null)}
                         class="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
-                        title="Annuler"
-                        aria-label="Annuler"
+                        title="Cancel"
+                        aria-label="Cancel"
                       >
                         ✕
                       </button>
@@ -426,8 +426,8 @@ export function SenmlView() {
                       <button
                         onClick={() => handleStartEdit(card)}
                         class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs transition-opacity p-0.5 rounded"
-                        title="Modifier le libellé"
-                        aria-label="Modifier le libellé"
+                        title="Edit label"
+                        aria-label="Edit label"
                       >
                         ✏️
                       </button>
@@ -448,8 +448,8 @@ export function SenmlView() {
                     onClick={() => handleMove(index, 'up')}
                     disabled={index === 0}
                     class="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
-                    title="Monter"
-                    aria-label="Monter"
+                    title="Move up"
+                    aria-label="Move up"
                   >
                     ▲
                   </button>
@@ -457,16 +457,16 @@ export function SenmlView() {
                     onClick={() => handleMove(index, 'down')}
                     disabled={index === cards.length - 1}
                     class="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
-                    title="Descendre"
-                    aria-label="Descendre"
+                    title="Move down"
+                    aria-label="Move down"
                   >
                     ▼
                   </button>
                   <button
                     onClick={() => handleRemoveCard(card.id)}
                     class="p-1 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors ml-1"
-                    title="Retirer du tableau de bord"
-                    aria-label="Retirer du tableau de bord"
+                    title="Remove from dashboard"
+                    aria-label="Remove from dashboard"
                   >
                     ✕
                   </button>
@@ -489,7 +489,7 @@ export function SenmlView() {
               <div class="pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
                 <span
                   class="cursor-help flex items-center gap-1"
-                  title={card.utc ? new Date(card.utc).toISOString() : 'Non renseigné'}
+                  title={card.utc ? new Date(card.utc).toISOString() : 'Unknown'}
                 >
                   <span>⏱️</span>
                   <span>{formatTimeAgo(card.utc)}</span>
@@ -504,7 +504,7 @@ export function SenmlView() {
         </div>
       )}
 
-      {/* Modal: Ajouter une carte */}
+      {/* Modal: Add Card */}
       {isAddModalOpen && (
         <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div
@@ -517,7 +517,7 @@ export function SenmlView() {
               <div class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
                 <h3 id="modal-add-card-title" class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <span>➕</span>
-                  <span>Ajouter une métrique au dashboard</span>
+                  <span>Add Metric to Dashboard</span>
                 </h3>
                 <button
                   onClick={() => setIsAddModalOpen(false)}
@@ -531,7 +531,7 @@ export function SenmlView() {
                 {/* Select from discovered metrics */}
                 <div>
                   <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Sélectionner parmi les métriques reçues
+                    Select from received metrics
                   </label>
                   <select
                     value={selectedMetricName}
@@ -542,10 +542,10 @@ export function SenmlView() {
                     }}
                     class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
-                    <option value="">-- Choisir une métrique existante --</option>
+                    <option value="">-- Choose an existing metric --</option>
                     {availableMetrics.map((m) => (
                       <option key={m.id} value={m.name}>
-                        {m.name} {m.unit ? `(${m.unit})` : ''} {m.is_visible ? '· [Déjà affichée]' : ''}
+                        {m.name} {m.unit ? `(${m.unit})` : ''} {m.is_visible ? '· [Already shown]' : ''}
                       </option>
                     ))}
                   </select>
@@ -554,11 +554,11 @@ export function SenmlView() {
                 {/* Or enter custom metric name */}
                 <div>
                   <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Ou saisir un nom de métrique complet
+                    Or enter a full metric name
                   </label>
                   <input
                     type="text"
-                    placeholder="ex: urn:dtn:node1:battery_voltage"
+                    placeholder="e.g. urn:dtn:node1:battery_voltage"
                     value={customMetricName}
                     onInput={(e) => {
                       const val = (e.target as HTMLInputElement).value;
@@ -572,11 +572,11 @@ export function SenmlView() {
                 {/* Custom label / alias */}
                 <div>
                   <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                    Libellé / Alias d'affichage (optionnel)
+                    Display Label / Alias (optional)
                   </label>
                   <input
                     type="text"
-                    placeholder="ex: Tension Batterie Principale"
+                    placeholder="e.g. Main Battery Voltage"
                     value={newCardLabel}
                     onInput={(e) => setNewCardLabel((e.target as HTMLInputElement).value)}
                     class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -589,14 +589,14 @@ export function SenmlView() {
                     onClick={() => setIsAddModalOpen(false)}
                     class="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                   >
-                    Annuler
+                    Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting || (!selectedMetricName && !customMetricName)}
                     class="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg shadow-xs transition-colors"
                   >
-                    {isSubmitting ? 'Ajout...' : 'Ajouter au dashboard'}
+                    {isSubmitting ? 'Adding...' : 'Add to Dashboard'}
                   </button>
                 </div>
               </form>

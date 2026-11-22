@@ -2,8 +2,9 @@ import { h } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { BundlesView } from './BundlesView';
 import { LogsView, LogRecord } from './LogsView';
+import { RegoRoutingView } from './RegoRoutingView';
 
-export type StationSubTab = 'radio' | 'routes' | 'security' | 'bundles' | 'logs' | 'advanced';
+export type StationSubTab = 'radio' | 'routes' | 'rego_routing' | 'security' | 'bundles' | 'logs' | 'advanced';
 
 export interface ActiveService {
   eid: string;
@@ -75,6 +76,7 @@ interface ConfigViewProps {
   incomingLog?: LogRecord | null;
   sseStatus?: 'connected' | 'disconnected' | 'connecting';
   canManageAdmin?: boolean;
+  enabledModules?: string[];
 }
 
 export function ConfigView({
@@ -90,6 +92,7 @@ export function ConfigView({
   incomingLog,
   sseStatus,
   canManageAdmin = true,
+  enabledModules,
 }: ConfigViewProps) {
   const [internalSubTab, setInternalSubTab] = useState<StationSubTab>('radio');
   const currentSubTab = activeSubTab || internalSubTab;
@@ -99,14 +102,18 @@ export function ConfigView({
     onSubTabChange?.(tab);
   };
 
-  const SUB_TABS: { id: StationSubTab; label: string; icon: string }[] = [
-    { id: 'radio', label: 'Liaisons & Radio', icon: '📡' },
-    { id: 'routes', label: 'Routage (RIB)', icon: '🧭' },
-    { id: 'security', label: 'Sécurité BPSec', icon: '🛡️' },
-    { id: 'bundles', label: 'Stockage & Paquets', icon: '📦' },
-    { id: 'logs', label: 'Traces & Diagnostic', icon: '📟' },
-    { id: 'advanced', label: 'Configuration JSON', icon: '⚙️' },
+  const allSubTabs: { id: StationSubTab; label: string; icon: string; moduleId?: string }[] = [
+    { id: 'radio', label: 'Links & Radio', icon: '📡' },
+    { id: 'routes', label: 'Routing (RIB)', icon: '🧭' },
+    { id: 'rego_routing', label: 'Rego Routing', icon: '⚖️', moduleId: 'rego_routing' },
+    { id: 'security', label: 'BPSec Security', icon: '🛡️' },
+    { id: 'bundles', label: 'Storage & Bundles', icon: '📦' },
+    { id: 'logs', label: 'Logs & Diagnostics', icon: '📟' },
+    { id: 'advanced', label: 'JSON Config', icon: '⚙️' },
   ];
+  const SUB_TABS = enabledModules
+    ? allSubTabs.filter((t) => !t.moduleId || enabledModules.includes(t.moduleId))
+    : allSubTabs;
   const [connectingPeer, setConnectingPeer] = useState<string | null>(null);
   const [connectMessage, setConnectMessage] = useState<{
     claName: string;
@@ -187,17 +194,17 @@ export function ConfigView({
         setSecurityPolicy(newPolicy);
         setKeyMessage({
           success: true,
-          text: `Politique de vérification mise à jour en mode "${newPolicy.toUpperCase()}".`,
+          text: `Verification policy updated to "${newPolicy.toUpperCase()}" mode.`,
         });
       } else {
         const err = await res.json().catch(() => ({}));
         setKeyMessage({
           success: false,
-          text: err.error || 'Échec de mise à jour de la politique.',
+          text: err.error || 'Failed to update policy.',
         });
       }
     } catch (e: any) {
-      setKeyMessage({ success: false, text: e.message || 'Erreur réseau.' });
+      setKeyMessage({ success: false, text: e.message || 'Network error.' });
     }
   };
 
@@ -206,7 +213,7 @@ export function ConfigView({
     if (!newKeyPattern.trim() || !newKeySecret.trim()) {
       setKeyMessage({
         success: false,
-        text: 'Le motif EID et la clé secrète sont obligatoires.',
+        text: 'EID pattern and secret key are required.',
       });
       return;
     }
@@ -234,24 +241,24 @@ export function ConfigView({
         setShowAddKeyModal(false);
         setKeyMessage({
           success: true,
-          text: `Clé ${created.direction.toUpperCase()} pour "${created.pattern}" enregistrée avec succès.`,
+          text: `${created.direction.toUpperCase()} key for "${created.pattern}" saved successfully.`,
         });
       } else {
         const err = await res.json().catch(() => ({}));
         setKeyMessage({
           success: false,
-          text: err.error || "Échec lors de l'enregistrement de la clé.",
+          text: err.error || 'Failed to save key.',
         });
       }
     } catch (e: any) {
-      setKeyMessage({ success: false, text: e.message || 'Erreur réseau.' });
+      setKeyMessage({ success: false, text: e.message || 'Network error.' });
     } finally {
       setSubmittingKey(false);
     }
   };
 
   const handleDeleteKey = async (id: string, pattern: string) => {
-    if (!confirm(`Supprimer la clé de sécurité pour "${pattern}" ?`)) return;
+    if (!confirm(`Delete security key for "${pattern}"?`)) return;
 
     try {
       setDeletingKeyId(id);
@@ -263,17 +270,17 @@ export function ConfigView({
         setKeys((prev) => prev.filter((k) => k.id !== id));
         setKeyMessage({
           success: true,
-          text: `Clé pour "${pattern}" supprimée.`,
+          text: `Key for "${pattern}" deleted.`,
         });
       } else {
         const err = await res.json().catch(() => ({}));
         setKeyMessage({
           success: false,
-          text: err.error || 'Échec lors de la suppression de la clé.',
+          text: err.error || 'Failed to delete key.',
         });
       }
     } catch (e: any) {
-      setKeyMessage({ success: false, text: e.message || 'Erreur réseau.' });
+      setKeyMessage({ success: false, text: e.message || 'Network error.' });
     } finally {
       setDeletingKeyId(null);
     }
@@ -564,7 +571,7 @@ export function ConfigView({
         })}
       </nav>
 
-      {/* SUB-TAB 1: LIAISONS & RADIO */}
+      {/* SUB-TAB 1: LINKS & RADIO */}
       {currentSubTab === 'radio' && (
         <>
           {/* Top 3 Cards Grid */}
@@ -836,7 +843,7 @@ export function ConfigView({
       </>
       )}
 
-      {/* SUB-TAB 2: ROUTAGE (RIB) */}
+      {/* SUB-TAB 2: ROUTING (RIB) */}
       {currentSubTab === 'routes' && (
       <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
         <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-4 mb-4">
@@ -1018,7 +1025,10 @@ export function ConfigView({
       </div>
       )}
 
-      {/* SUB-TAB 3: SÉCURITÉ BPSEC (RFC 9103 / RFC 9172) */}
+      {/* SUB-TAB 3: REGO ROUTING */}
+      {currentSubTab === 'rego_routing' && <RegoRoutingView />}
+
+      {/* SUB-TAB 4: BPSEC SECURITY (RFC 9103 / RFC 9172) */}
       {currentSubTab === 'security' && (
       <div class="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-xs border border-slate-200 dark:border-slate-700">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700 gap-3">
@@ -1026,16 +1036,16 @@ export function ConfigView({
             <span class="text-xl">🛡️</span>
             <div>
               <h3 class="text-base font-bold text-slate-900 dark:text-white">
-                Sécurité & Authentification BPSec (RFC 9103 / RFC 9172)
+                BPSec Security & Authentication (RFC 9103 / RFC 9172)
               </h3>
               <p class="text-xs text-slate-500 dark:text-slate-400">
-                Gestion des clés HMAC-SHA256 pour signature automatique et vérification d'intégrité (sans chiffrement).
+                Manage HMAC-SHA256 keys for automatic signing and integrity verification (no encryption).
               </p>
             </div>
           </div>
           <div class="flex items-center space-x-2">
             <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-              {keys.length} clé{keys.length > 1 ? 's' : ''}
+              {keys.length} key{keys.length === 1 ? '' : 's'}
             </span>
             {canManageAdmin && (
               <button
@@ -1045,7 +1055,7 @@ export function ConfigView({
                 }}
                 class="px-3 py-1 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1 cursor-pointer"
               >
-                <span>{showAddKeyModal ? '✕ Fermer' : '+ Ajouter une clé'}</span>
+                <span>{showAddKeyModal ? '✕ Close' : '+ Add Key'}</span>
               </button>
             )}
           </div>
@@ -1073,10 +1083,10 @@ export function ConfigView({
         <div class="mt-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
           <div class="md:col-span-2">
             <label class="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-              Politique de vérification à l'ingestion
+              Ingress Verification Policy
             </label>
             <p class="text-[11px] text-slate-500 dark:text-slate-400">
-              Contrôle l'acceptation ou le rejet des paquets entrants lors d'une altération ou signature invalide.
+              Controls whether incoming bundles are accepted or rejected when tampered with or carrying an invalid signature.
             </p>
           </div>
           <div>
@@ -1086,9 +1096,9 @@ export function ConfigView({
               onChange={(e: any) => handleUpdatePolicy(e.target.value)}
               class="w-full text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <option value="warn">Avertissement (Warn) — Recommandé</option>
-              <option value="strict">Strict (Rejeter signatures invalides)</option>
-              <option value="ignore">Ignorer la vérification (Ignore)</option>
+              <option value="warn">Warn — Recommended</option>
+              <option value="strict">Strict (Reject invalid signatures)</option>
+              <option value="ignore">Ignore verification</option>
             </select>
           </div>
         </div>
@@ -1101,10 +1111,10 @@ export function ConfigView({
           >
             <div class="flex items-center justify-between">
               <span class="font-semibold text-xs text-emerald-800 dark:text-emerald-300">
-                Configuration d'une nouvelle clé BPSec BIB
+                Configure New BPSec BIB Key
               </span>
               <span class="text-[10px] text-slate-500 dark:text-slate-400">
-                Fichier local protégé (POSIX 0600) — Secrets jamais renvoyés par l'API
+                Protected local file (POSIX 0600) — Secrets are never returned by the API
               </span>
             </div>
 
@@ -1112,7 +1122,7 @@ export function ConfigView({
               {/* Direction */}
               <div>
                 <label class="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Direction de la clé *
+                  Key Direction *
                 </label>
                 <div class="flex items-center space-x-2">
                   <button
@@ -1124,7 +1134,7 @@ export function ConfigView({
                         : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    📤 Sortante (Destination)
+                    📤 Outbound (Destination)
                   </button>
                   <button
                     type="button"
@@ -1135,24 +1145,24 @@ export function ConfigView({
                         : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    📥 Entrante (Émetteur)
+                    📥 Inbound (Sender)
                   </button>
                 </div>
                 <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
                   {newKeyDirection === 'outbound'
-                    ? 'Utilisée pour signer les bundles envoyés vers les nœuds correspondant au motif.'
-                    : 'Utilisée pour vérifier les bundles reçus depuis les émetteurs correspondant au motif.'}
+                    ? 'Used to sign bundles sent to nodes matching this pattern.'
+                    : 'Used to verify bundles received from senders matching this pattern.'}
                 </p>
               </div>
 
               {/* Label */}
               <div>
                 <label class="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Libellé / Station (optionnel)
+                  Label / Station (optional)
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: Station F5KUV ou Club Relais"
+                  placeholder="e.g. Station F5KUV or Club Relay"
                   value={newKeyLabel}
                   onInput={(e: any) => setNewKeyLabel(e.target.value)}
                   class="w-full text-xs px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -1164,10 +1174,10 @@ export function ConfigView({
             <div>
               <div class="flex items-center justify-between mb-1">
                 <label class="text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                  Motif d'EID (Pattern) *
+                  EID Pattern *
                 </label>
                 <div class="flex items-center space-x-1">
-                  <span class="text-[10px] text-slate-400">Exemples :</span>
+                  <span class="text-[10px] text-slate-400">Examples:</span>
                   {['dtn://*', 'dtn://f5kuv/*', 'dtn://*/chat', 'ipn:0.1.*'].map((pat) => (
                     <button
                       type="button"
@@ -1181,7 +1191,7 @@ export function ConfigView({
               </div>
               <input
                 type="text"
-                placeholder="ex: dtn://f5kuv/* ou dtn://*/chat ou dtn://*"
+                placeholder="e.g. dtn://f5kuv/* or dtn://*/chat or dtn://*"
                 value={newKeyPattern}
                 onInput={(e: any) => setNewKeyPattern(e.target.value)}
                 required
@@ -1193,7 +1203,7 @@ export function ConfigView({
             <div>
               <div class="flex items-center justify-between mb-1">
                 <label class="text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                  Clé Secrète HMAC-SHA256 (Passphrase ou Hex 256 bits) *
+                  HMAC-SHA256 Secret Key (Passphrase or 256-bit Hex) *
                 </label>
                 <div class="flex items-center space-x-2">
                   <button
@@ -1201,20 +1211,20 @@ export function ConfigView({
                     onClick={generateRandomSecret}
                     class="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
                   >
-                    🎲 Générer aléatoire (256-bit Hex)
+                    🎲 Generate Random (256-bit Hex)
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowSecretText(!showSecretText)}
                     class="text-[11px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
                   >
-                    {showSecretText ? 'Masquer' : 'Afficher'}
+                    {showSecretText ? 'Hide' : 'Show'}
                   </button>
                 </div>
               </div>
               <input
                 type={showSecretText ? 'text' : 'password'}
-                placeholder="Entrez une phrase secrète partagée ou une clé hexadécimale (64 caractères)"
+                placeholder="Enter a shared passphrase or 64-character hex key"
                 value={newKeySecret}
                 onInput={(e: any) => setNewKeySecret(e.target.value)}
                 required
@@ -1228,14 +1238,14 @@ export function ConfigView({
                 onClick={() => setShowAddKeyModal(false)}
                 class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
               >
-                Annuler
+                Cancel
               </button>
               <button
                 type="submit"
                 disabled={submittingKey}
                 class="px-4 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition cursor-pointer disabled:opacity-50"
               >
-                {submittingKey ? 'Enregistrement...' : 'Enregistrer la clé'}
+                {submittingKey ? 'Saving...' : 'Save Key'}
               </button>
             </div>
           </form>
@@ -1248,23 +1258,23 @@ export function ConfigView({
             <div class="flex items-center space-x-2 mb-2">
               <span class="text-sm">📤</span>
               <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Clés sortantes (Signature automatique selon le destinataire)
+                Outbound Keys (Automatic signing by destination)
               </h4>
             </div>
 
             {keys.filter((k) => k.direction === 'outbound').length === 0 ? (
               <p class="text-xs text-slate-400 italic bg-slate-50 dark:bg-slate-900/30 p-3 rounded-lg">
-                Aucune clé sortante configurée. Les paquets émis ne seront pas signés BPSec.
+                No outbound keys configured. Sent bundles will not be signed with BPSec.
               </p>
             ) : (
               <div class="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-xl">
                 <table class="w-full text-left text-xs font-mono divide-y divide-slate-100 dark:divide-slate-700">
                   <thead class="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
                     <tr>
-                      <th class="py-2 px-3">Motif Destination</th>
-                      <th class="py-2 px-3">Libellé</th>
-                      <th class="py-2 px-3">Empreinte SHA-256</th>
-                      <th class="py-2 px-3">Créée le</th>
+                      <th class="py-2 px-3">Destination Pattern</th>
+                      <th class="py-2 px-3">Label</th>
+                      <th class="py-2 px-3">SHA-256 Fingerprint</th>
+                      <th class="py-2 px-3">Created</th>
                       <th class="py-2 px-3 text-right">Action</th>
                     </tr>
                   </thead>
@@ -1292,7 +1302,7 @@ export function ConfigView({
                                 disabled={deletingKeyId === k.id}
                                 class="px-2 py-1 text-[11px] font-semibold rounded bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 transition cursor-pointer disabled:opacity-50"
                               >
-                                {deletingKeyId === k.id ? '...' : '🗑️ Supprimer'}
+                                {deletingKeyId === k.id ? '...' : '🗑️ Delete'}
                               </button>
                             )}
                           </td>
@@ -1309,23 +1319,23 @@ export function ConfigView({
             <div class="flex items-center space-x-2 mb-2">
               <span class="text-sm">📥</span>
               <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Clés entrantes (Vérification cryptographique selon l'émetteur)
+                Inbound Keys (Cryptographic verification by sender)
               </h4>
             </div>
 
             {keys.filter((k) => k.direction === 'inbound').length === 0 ? (
               <p class="text-xs text-slate-400 italic bg-slate-50 dark:bg-slate-900/30 p-3 rounded-lg">
-                Aucune clé entrante configurée. Les paquets reçus porteront l'état "Non signé" ou "Clé manquante".
+                No inbound keys configured. Received bundles will show "Unsigned" or "Missing Key".
               </p>
             ) : (
               <div class="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-xl">
                 <table class="w-full text-left text-xs font-mono divide-y divide-slate-100 dark:divide-slate-700">
                   <thead class="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
                     <tr>
-                      <th class="py-2 px-3">Motif Émetteur</th>
-                      <th class="py-2 px-3">Libellé</th>
-                      <th class="py-2 px-3">Empreinte SHA-256</th>
-                      <th class="py-2 px-3">Créée le</th>
+                      <th class="py-2 px-3">Sender Pattern</th>
+                      <th class="py-2 px-3">Label</th>
+                      <th class="py-2 px-3">SHA-256 Fingerprint</th>
+                      <th class="py-2 px-3">Created</th>
                       <th class="py-2 px-3 text-right">Action</th>
                     </tr>
                   </thead>
@@ -1353,7 +1363,7 @@ export function ConfigView({
                                 disabled={deletingKeyId === k.id}
                                 class="px-2 py-1 text-[11px] font-semibold rounded bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 transition cursor-pointer disabled:opacity-50"
                               >
-                                {deletingKeyId === k.id ? '...' : '🗑️ Supprimer'}
+                                {deletingKeyId === k.id ? '...' : '🗑️ Delete'}
                               </button>
                             )}
                           </td>
@@ -1368,24 +1378,24 @@ export function ConfigView({
       </div>
       )}
 
-      {/* SUB-TAB 4: BUNDLES (STOCKAGE & PAQUETS) */}
+      {/* SUB-TAB 5: STORAGE & BUNDLES */}
       {currentSubTab === 'bundles' && (
         <BundlesView key={bundlesKey} onRefresh={onRefresh} canManageAdmin={canManageAdmin} />
       )}
 
-      {/* SUB-TAB 5: LOGS (TRACES & DIAGNOSTIC) */}
+      {/* SUB-TAB 6: LOGS & DIAGNOSTICS */}
       {currentSubTab === 'logs' && (
         <LogsView incomingLog={incomingLog || null} sseStatus={sseStatus || 'disconnected'} />
       )}
 
-      {/* SUB-TAB 6: CONFIGURATION JSON AVANCÉE */}
+      {/* SUB-TAB 7: ADVANCED JSON CONFIGURATION */}
       {currentSubTab === 'advanced' && (
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
           <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
             <div class="flex items-center space-x-2">
               <span class="text-lg">⚙️</span>
               <h3 class="text-base font-bold text-slate-900 dark:text-white">
-                Configuration JSON de la station
+                Station JSON Configuration
               </h3>
             </div>
             <button
@@ -1396,7 +1406,7 @@ export function ConfigView({
               }}
               class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-900/80 transition cursor-pointer"
             >
-              📋 Copier le JSON
+              📋 Copy JSON
             </button>
           </div>
           <div class="bg-slate-900 text-slate-100 p-4 rounded-xl overflow-x-auto text-xs font-mono border border-slate-700 shadow-inner">

@@ -27,7 +27,7 @@ export function LoginModal({ stationCallsign, onSuccess }: LoginModalProps) {
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
     if (!username.trim() || !password) {
-      setError('Veuillez saisir votre indicatif / identifiant et mot de passe.');
+      setError('Please enter your callsign / username and password.');
       return;
     }
 
@@ -63,16 +63,16 @@ export function LoginModal({ stationCallsign, onSuccess }: LoginModalProps) {
         setError(
           serverMsg ||
             (retryAfter
-              ? `Trop de tentatives échouées. Réessayez dans ${retryAfter}s.`
-              : 'Trop de tentatives échouées. Veuillez patienter avant de réessayer.')
+              ? `Too many failed attempts. Try again in ${retryAfter}s.`
+              : 'Too many failed attempts. Please wait before trying again.')
         );
       } else if (res.status === 401) {
-        setError('Identifiant ou mot de passe invalide.');
+        setError('Invalid username or password.');
       } else {
-        setError(serverMsg || `Erreur de connexion (HTTP ${res.status})`);
+        setError(serverMsg || `Login error (HTTP ${res.status})`);
       }
     } catch (err: any) {
-      setError(err?.message || 'Erreur réseau lors de la connexion.');
+      setError(err?.message || 'Network error during login.');
     } finally {
       setSubmitting(false);
     }
@@ -95,12 +95,12 @@ export function LoginModal({ stationCallsign, onSuccess }: LoginModalProps) {
               id="dtn-login-title"
               class="text-lg font-bold text-slate-900 dark:text-white"
             >
-              Authentification Station DTN
+              DTN Station Authentication
             </h2>
             <p class="text-xs text-slate-500 dark:text-slate-400">
               {stationCallsign
-                ? `Station ${stationCallsign} — Accès protégé`
-                : 'Veuillez vous authentifier pour accéder à la console.'}
+                ? `Station ${stationCallsign} — Protected Access`
+                : 'Please sign in to access the console.'}
             </p>
           </div>
         </div>
@@ -121,7 +121,7 @@ export function LoginModal({ stationCallsign, onSuccess }: LoginModalProps) {
               for="login-username"
               class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
             >
-              Indicatif / Utilisateur
+              Callsign / Username
             </label>
             <input
               id="login-username"
@@ -129,7 +129,7 @@ export function LoginModal({ stationCallsign, onSuccess }: LoginModalProps) {
               autocomplete="username"
               value={username}
               onInput={(e: any) => setUsername(e.target.value)}
-              placeholder="ex: f4abc ou admin"
+              placeholder="e.g. f4abc or admin"
               required
               disabled={submitting}
               class="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
@@ -141,7 +141,7 @@ export function LoginModal({ stationCallsign, onSuccess }: LoginModalProps) {
               for="login-password"
               class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
             >
-              Mot de passe
+              Password
             </label>
             <input
               id="login-password"
@@ -161,7 +161,7 @@ export function LoginModal({ stationCallsign, onSuccess }: LoginModalProps) {
             disabled={submitting}
             class="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-sm transition-colors cursor-pointer disabled:opacity-50"
           >
-            {submitting ? 'Vérification...' : 'Se connecter'}
+            {submitting ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
       </div>

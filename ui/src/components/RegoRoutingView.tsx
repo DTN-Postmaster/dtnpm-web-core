@@ -24,12 +24,14 @@ export interface PolicyStatusResponse {
     active_profile: string;
     custom_ingress_rego?: string | null;
     custom_egress_rego?: string | null;
+    custom_routing_rego?: string | null;
   };
   sources: {
     constants: string;
     helpers: string;
     ingress: string;
     egress: string;
+    routing?: string;
   };
 }
 
@@ -60,6 +62,7 @@ export function RegoRoutingView() {
   const [trebBlockType, setTrebBlockType] = useState(201);
   const [customIngress, setCustomIngress] = useState('');
   const [customEgress, setCustomEgress] = useState('');
+  const [customRouting, setCustomRouting] = useState('');
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +89,7 @@ export function RegoRoutingView() {
       setTrebBlockType(polData.config.treb_block_type);
       setCustomIngress(polData.config.custom_ingress_rego ?? polData.sources.ingress);
       setCustomEgress(polData.config.custom_egress_rego ?? polData.sources.egress);
+      setCustomRouting(polData.config.custom_routing_rego ?? polData.sources.routing ?? '');
       setDecisions(decData);
     } catch (e) {
       setError(String(e));
@@ -118,7 +122,7 @@ export function RegoRoutingView() {
       }
       setNewPattern('');
       setNewReason('');
-      setStatusMsg('EID ajouté à la liste noire Rego.');
+      setStatusMsg('EID added to Rego blacklist.');
       await loadAll();
     } catch (err) {
       setError(String(err));
@@ -174,6 +178,7 @@ export function RegoRoutingView() {
             treb_block_type: Number(trebBlockType),
             custom_ingress_rego: customIngress,
             custom_egress_rego: customEgress,
+            custom_routing_rego: customRouting,
           };
 
       const res = await fetch(`${API_BASE}/policy`, {
@@ -187,8 +192,8 @@ export function RegoRoutingView() {
       }
       setStatusMsg(
         resetToDefault
-          ? 'Politique Rego réinitialisée sur le profil embarqué par défaut.'
-          : 'Politique Rego compilée et activée à chaud.',
+          ? 'Rego policy reset to embedded default profile.'
+          : 'Rego policy compiled and hot-reloaded.',
       );
       await loadAll();
     } catch (err) {
@@ -200,29 +205,36 @@ export function RegoRoutingView() {
 
   const handleClearDecisions = async () => {
     setBusy(true);
+    setError(null);
     try {
-      await fetch(`${API_BASE}/decisions/clear`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/decisions/clear`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
       await loadAll();
+    } catch (err) {
+      setError(String(err));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div class="max-w-6xl mx-auto p-4 space-y-6">
+    <div class="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-xs border border-slate-200 dark:border-slate-700 space-y-6">
       <header class="border-b pb-4 dark:border-slate-700 flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h1 class="text-2xl font-bold text-slate-900 dark:text-white">
-            Routage & Filtrage OPA / Rego
-          </h1>
-          <p class="text-sm text-slate-500">
-            Blacklist d&apos;EIDs, Hop Count RFC 9171, Spray-and-Wait et Trajectoire APRS / TREB
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">
+            OPA / Rego Routing & Filtering
+          </h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            EID blacklist, RFC 9171 Hop Count, Spray-and-Wait, and APRS / TREB Trajectory
           </p>
         </div>
         {policyStatus && (
           <div class="flex items-center gap-2 text-xs">
             <span class="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200 font-semibold">
-              Profil: {policyStatus.config.active_profile}
+              Profile: {policyStatus.config.active_profile}
             </span>
             <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
               TREB Block: {policyStatus.config.treb_block_type}
@@ -244,20 +256,20 @@ export function RegoRoutingView() {
       )}
 
       {/* Blacklist CRUD */}
-      <section class="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
-        <h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100">
-          Liste noire des EIDs sources (Ingress Filter)
-        </h2>
+      <section class="bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+        <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          Source EID Blacklist (Ingress Filter)
+        </h4>
 
         <form onSubmit={handleAddBlacklist} class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
           <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
-              Motif d&apos;EID (exact ou wildcard *)
+              EID Pattern (exact or wildcard *)
             </label>
             <input
               type="text"
               required
-              placeholder="dtn://spam/* ou ipn:99.*"
+              placeholder="dtn://spam/* or ipn:99.*"
               value={newPattern}
               onInput={(e) => setNewPattern((e.target as HTMLInputElement).value)}
               class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
@@ -265,11 +277,11 @@ export function RegoRoutingView() {
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
-              Raison / commentaire
+              Reason / comment
             </label>
             <input
               type="text"
-              placeholder="Anti-spam / boucle"
+              placeholder="Anti-spam / loop"
               value={newReason}
               onInput={(e) => setNewReason((e.target as HTMLInputElement).value)}
               class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
@@ -278,9 +290,9 @@ export function RegoRoutingView() {
           <button
             type="submit"
             disabled={busy}
-            class="px-4 py-2 text-sm font-semibold rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
+            class="px-4 py-2 text-sm font-semibold rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
           >
-            Bloquer cet EID
+            Block EID
           </button>
         </form>
 
@@ -288,9 +300,9 @@ export function RegoRoutingView() {
           <table class="min-w-full text-sm text-left">
             <thead class="text-xs uppercase text-slate-500 border-b dark:border-slate-700">
               <tr>
-                <th class="py-2 pr-4">Motif EID</th>
-                <th class="py-2 pr-4">Raison</th>
-                <th class="py-2 pr-4">État</th>
+                <th class="py-2 pr-4">EID Pattern</th>
+                <th class="py-2 pr-4">Reason</th>
+                <th class="py-2 pr-4">Status</th>
                 <th class="py-2 text-right">Actions</th>
               </tr>
             </thead>
@@ -298,7 +310,7 @@ export function RegoRoutingView() {
               {blacklist.length === 0 ? (
                 <tr>
                   <td colSpan={4} class="py-4 text-slate-500 italic">
-                    Aucun EID blacklisté.
+                    No blacklisted EIDs.
                   </td>
                 </tr>
               ) : (
@@ -311,13 +323,13 @@ export function RegoRoutingView() {
                         type="button"
                         onClick={() => handleToggleBlacklist(entry)}
                         disabled={busy}
-                        class={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        class={`px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer ${
                           entry.enabled
                             ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200'
                             : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
                         }`}
                       >
-                        {entry.enabled ? 'Actif' : 'Inactif'}
+                        {entry.enabled ? 'Active' : 'Inactive'}
                       </button>
                     </td>
                     <td class="py-2 text-right">
@@ -325,9 +337,9 @@ export function RegoRoutingView() {
                         type="button"
                         onClick={() => handleDeleteBlacklist(entry.id)}
                         disabled={busy}
-                        class="text-xs text-rose-600 hover:underline"
+                        class="text-xs text-rose-600 hover:underline cursor-pointer"
                       >
-                        Supprimer
+                        Delete
                       </button>
                     </td>
                   </tr>
@@ -339,27 +351,27 @@ export function RegoRoutingView() {
       </section>
 
       {/* Policy Profile & Editor */}
-      <section class="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+      <section class="bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
         <div class="flex flex-wrap justify-between items-center gap-2">
-          <h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100">
-            Politiques OPA / Rego actives
-          </h2>
+          <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100">
+            Active OPA / Rego Policies
+          </h4>
           <div class="flex gap-2">
             <button
               type="button"
               disabled={busy}
               onClick={() => handleSavePolicy(true)}
-              class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700"
+              class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
             >
-              Réinitialiser (défaut)
+              Reset (default)
             </button>
             <button
               type="button"
               disabled={busy}
               onClick={() => handleSavePolicy(false)}
-              class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+              class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
             >
-              Compiler et appliquer
+              Compile & Apply
             </button>
           </div>
         </div>
@@ -367,7 +379,7 @@ export function RegoRoutingView() {
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
-              Limite de sauts par défaut (Type 10)
+              Default Hop Limit (Type 10)
             </label>
             <input
               type="number"
@@ -380,7 +392,7 @@ export function RegoRoutingView() {
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
-              Code bloc TREB (chemin passé, 192–255)
+              TREB Block Type (path history, 192–255)
             </label>
             <input
               type="number"
@@ -393,7 +405,7 @@ export function RegoRoutingView() {
           </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div>
             <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
               ingress.rego (`package dtn.ingress`)
@@ -416,29 +428,42 @@ export function RegoRoutingView() {
               class="w-full p-2 font-mono text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
             />
           </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+              routing.rego (`package dtn.routing`)
+            </label>
+            <textarea
+              rows={12}
+              value={customRouting}
+              onInput={(e) => setCustomRouting((e.target as HTMLTextAreaElement).value)}
+              class="w-full p-2 font-mono text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+            />
+          </div>
         </div>
       </section>
 
       {/* Audit log */}
-      <section class="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+      <section class="bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
         <div class="flex justify-between items-center">
-          <h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100">
-            Journal des décisions Rego ({decisions.length})
-          </h2>
+          <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100">
+            Rego Decision Audit Log ({decisions.length})
+          </h4>
           <div class="flex gap-2">
             <button
               type="button"
+              disabled={busy}
               onClick={loadAll}
-              class="px-3 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-600"
+              class="px-3 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-600 disabled:opacity-50 cursor-pointer"
             >
-              Rafraîchir
+              Refresh
             </button>
             <button
               type="button"
+              disabled={busy}
               onClick={handleClearDecisions}
-              class="px-3 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-600 text-rose-600"
+              class="px-3 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-600 text-rose-600 disabled:opacity-50 cursor-pointer"
             >
-              Effacer
+              Clear
             </button>
           </div>
         </div>
@@ -451,14 +476,14 @@ export function RegoRoutingView() {
                 <th class="py-2 pr-3">Action</th>
                 <th class="py-2 pr-3">Source → Dest</th>
                 <th class="py-2 pr-3">Route Key / Peer</th>
-                <th class="py-2">Raison</th>
+                <th class="py-2">Reason</th>
               </tr>
             </thead>
             <tbody class="divide-y dark:divide-slate-700">
               {decisions.length === 0 ? (
                 <tr>
                   <td colSpan={5} class="py-4 text-slate-500 italic">
-                    Aucune évaluation Rego enregistrée pour le moment.
+                    No Rego evaluations recorded yet.
                   </td>
                 </tr>
               ) : (
